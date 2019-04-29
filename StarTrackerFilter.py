@@ -15,7 +15,7 @@ class StarTracker_Filter:
 		self.wheel_cant = wheel_cant
 
 		solver = ode(propagateEKF)
-		solver.set_integrator('lsoda')
+		solver.set_integrator('dopri5', max_step = 1e10, nsteps = 1e5)
 		solver.set_initial_value(self.state, 0)
 		solver.set_f_params(self.I_sc)
 

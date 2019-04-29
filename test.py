@@ -21,14 +21,14 @@ def main():
     wheel_cant = pi/8 # [rad]
 
     # Noise estimates (standard deviations) for EKF:
-    PROCESS_NOISE = sqrt(1e-10)
+    PROCESS_NOISE = sqrt(1e-8)
     MEASUREMENT_NOISE = sqrt(1e-3)
     COVARIANCE_GUESS = sqrt(1e-3)
     STAR_TRACKER_NOISE = sqrt(1e-3)
     GYRO_NOISE = sqrt(1e-3)
 
     aguess = array([1,2,3])/norm(array([1,2,3]))
-    thetaguess = 0.1
+    thetaguess = 3
     Eguess = aguess*sin(thetaguess/2)
     nguess = cos(thetaguess/2)
     w_guess = array([0.5, 0.5, 0.5])
@@ -37,12 +37,12 @@ def main():
     state = hstack([E, n, w, w_wheels])
     
     solver = ode(propagateTruth)
-    solver.set_integrator('dopri5')
+    solver.set_integrator('dopri5', nsteps = 1e4)
     solver.set_initial_value(state, 0)
     solver.set_f_params(I)
     
-    tspan = 1000 # Total simulation time [sec]
-    dt = .1
+    tspan = 5000 # Total simulation time [sec]
+    dt = 1
     t = [] # [sec]
     newstate = []
     measurements = []
@@ -107,6 +107,7 @@ def main():
 #main
     
 def propagateTruth(t, state, I):
+
     E = state[0:3]
     n = state[3]
     w = state[4:7]
@@ -114,7 +115,7 @@ def propagateTruth(t, state, I):
     dE = .5*(n*identity(3) + crux(E))@w
     dn = -.5*dot(E, w)
 
-    Td = random.normal(0, 1e-3, (3,))
+    Td = random.normal(0, 1e-6, (3,))
 
     dw = inv(I) @ (Td - crux(w)@ (I@w))
     
