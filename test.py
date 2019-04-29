@@ -27,8 +27,8 @@ def main():
     STAR_TRACKER_NOISE = sqrt(1e-3)
     GYRO_NOISE = sqrt(1e-3)
 
-    aguess = array([1,2,3])/norm(array([1,2,3]))
-    thetaguess = 0.1
+    aguess = array([1,5,-3])/norm(array([1,5,-3]))
+    thetaguess = 3
     Eguess = aguess*sin(thetaguess/2)
     nguess = cos(thetaguess/2)
     w_guess = array([0.5, 0.5, 0.5])
@@ -53,6 +53,7 @@ def main():
     t.append(solver.t)
     state_estimate.append(EKF.getState())
 
+    percentage = 10
     while solver.successful() and (solver.t < tspan):
         q_measurement = solver.y[0:4] + random.normal(0, STAR_TRACKER_NOISE, (4,))
         q_measurement = q_measurement/norm(q_measurement)
@@ -65,6 +66,12 @@ def main():
         solver.integrate(solver.t + dt)
         t.append(solver.t)
         newstate.append(solver.y)
+
+        completion = solver.t/tspan*100
+        if completion > percentage:
+            print(percentage,"percent complete")
+            percentage+= 10
+
     #while
 
     t = hstack(t)
@@ -73,21 +80,21 @@ def main():
 
     fig, axes1 = plt.subplots(4, 1, squeeze = False)
 
-    axes1[0][0].plot(t, newstate[:,0])
     axes1[0][0].plot(t, state_estimate[:,0], '.')
+    axes1[0][0].plot(t, newstate[:,0])
     axes1[0][0].set_title('eps1')
     axes1[0][0].legend(['Truth', 'Estimate'])
 
-    axes1[1][0].plot(t, newstate[:,1])
     axes1[1][0].plot(t, state_estimate[:,1], '.')
+    axes1[1][0].plot(t, newstate[:,1])
     axes1[1][0].set_title('eps2')
 
-    axes1[2][0].plot(t, newstate[:,2])
     axes1[2][0].plot(t, state_estimate[:,2], '.')
+    axes1[2][0].plot(t, newstate[:,2])
     axes1[2][0].set_title('eps3')
 
-    axes1[3][0].plot(t, newstate[:,3])
     axes1[3][0].plot(t, state_estimate[:,3], '.')
+    axes1[3][0].plot(t, newstate[:,3])
     axes1[3][0].set_title('eta')
 
     fig = plt.figure()
