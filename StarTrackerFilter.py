@@ -5,7 +5,7 @@ class StarTracker_Filter:
 
 	def __init__(self, E_initial, n_initial , w_initial, I_sc, Iwheels, wheel_cant, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS):
 
-		self.I_sc = 1.1*I_sc
+		self.I_sc = I_sc
 		self.Iwheels = Iwheels
 		self.H = identity(7)
 		self.state = hstack([E_initial, n_initial, w_initial])
@@ -59,15 +59,23 @@ class StarTracker_Filter:
 		return self.integrator.y
 	#predict_with_ode
 
-	def predict_euler(self, dt):
+	def getdstate(self):
 		E = self.state[0:3]
 		n = self.state[3]
 		w = self.state[4:7]
 		dE = .5 * (n * identity(3) + crux(E)) @ w
 		dn = -.5 * dot(E, w)
 		dw = inv(self.I_sc) @ (-crux(w) @ (self.I_sc @ w))
-		dstate = hstack([dE, dn, dw])
-		return self.state + dstate*dt
+		return hstack([dE, dn, dw])
+	#getdstate
+
+	def predict_euler(self, dt):
+		predicted_state = self.state
+		for i in range(10):
+			dstate = self.getdstate()
+			predicted_state += dstate*(dt/10)
+		#for
+		return predicted_state
 	#predict_euler
 
 	def update(self, z, dt):
