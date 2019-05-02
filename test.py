@@ -2,6 +2,7 @@ from StarTrackerFilter import *
 from AERO_TOOLKIT_NEW import *
 from pyquaternion import *
 import matplotlib.pyplot as plt
+from Controller import *
 
 def main():
 
@@ -41,6 +42,19 @@ def main():
     w_guess = array([0.05, 0.05, -0.05])
 
     EKF = StarTracker_Filter(Eguess, nguess, w_guess,  I, Iw, wheel_cant, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS)
+
+    WHEEL_TILT = 35/180*pi #35 degrees but in radians
+    WHEEL_INERTIAS = [Iw]*4
+    DAMPING_RATIO = .1
+    ANGULAR_FREQUENCY = .1
+    E_TARGET = array([0,0,0])
+    N_TARGET = 1
+    W_TARGET = array([0,0,0])
+    controller = Controller(I, WHEEL_TILT, WHEEL_INERTIAS)
+    KP, KD, = controller.calc_gains(DAMPING_RATIO, ANGULAR_FREQUENCY)
+    controller.set_gains(KP, KD)
+    controller.set_target(E_TARGET, N_TARGET, W_TARGET)
+
     state = hstack([E, n, w, w_wheels, R, V])
     
     solver = ode(propagateTruth)
