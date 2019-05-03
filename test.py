@@ -210,6 +210,17 @@ def main():
     plt.xlabel('Time [Number of Orbits]')
     plt.legend(['Body X', 'Body Y', 'Body Z'])
 
+    fig5 = plt.figure()
+
+    plt.plot(t / T, q_error[:, 0])
+    plt.plot(t / T, q_error[:, 1])
+    plt.plot(t / T, q_error[:, 2])
+    plt.plot(t / T, q_error[:, 3])
+    plt.grid()
+    plt.title('Quaternion Error')
+    plt.xlabel('Time [Number of Orbits]')
+    plt.legend(['q_i', 'q_j', 'q_k', 'q_r'])
+
     plt.show()
 #main
     
