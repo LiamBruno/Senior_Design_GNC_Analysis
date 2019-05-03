@@ -25,7 +25,7 @@ def main():
     m = 500 # [kg]
 
     I = array([[(1/12)*m*(L**2 + W**2), 0, 0],[0, (1/12)*m*(L**2 + H**2), 0],[0, 0, (1/12)*m*(H**2 + W**2)]])
-    Iw = 0.5 # Inertia of wheels around spin axis [kg*m^2]
+    Iw = 20 # Inertia of wheels around spin axis [kg*m^2]
     wheel_cant = pi/8 # [rad]
 
     # Noise estimates (standard deviations) for EKF:
@@ -43,27 +43,33 @@ def main():
 
     EKF = StarTracker_Filter(Eguess, nguess, w_guess,  I, Iw, wheel_cant, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS)
 
-    WHEEL_TILT = 35/180*pi #35 degrees but in radians
+    WHEEL_TILT = 35*(pi/180) #35 degrees but in radians
     WHEEL_INERTIAS = [Iw]*4
     DAMPING_RATIO = .65
     SETTLING_TIME = 30 # [sec]
     E_TARGET = array([0,0,0])
     N_TARGET = 1
     W_TARGET = array([0,0,0])
-    controller = Controller(I, WHEEL_TILT, WHEEL_INERTIAS)
+    s = sin(WHEEL_TILT)
+    c = cos(WHEEL_TILT)
+    AS = array([[s, 0, -s, 0],
+                [0, s, 0, -s],
+                [c, c, c, c]])
+    controller = Controller(I, WHEEL_TILT, WHEEL_INERTIAS, EKF.getState(), AS)
     KP, KD, = controller.calc_gains(DAMPING_RATIO, SETTLING_TIME)
     controller.set_gains(KP, KD)
     controller.set_target(E_TARGET, N_TARGET, W_TARGET)
 
     state = hstack([E, n, w, w_wheels, R, V])
-    
+
+    dt = 0.5
     solver = ode(propagateTruth)
-    solver.set_integrator('dopri5')
+    solver.set_integrator('dopri5', max_step = dt)
     solver.set_initial_value(state, 0)
-    solver.set_f_params(I, mu)
+    Ics = controller.getIcs()
+    solver.set_f_params(I, Ics, AS, mu, zeros(3), zeros(4))
     
     tspan = T/10 # Total simulation time [sec]
-    dt = 0.5
     t = [] # [sec]
     newstate = []
     measurements = []
@@ -108,6 +114,10 @@ def main():
         estimate = EKF.update(measurement, dt)
         ang_vel_error.append(norm(estimate[4:7]) - norm(solver.y[4:7]))
         state_estimate.append(estimate)
+        controller.set_estimate(estimate)
+        Tc = controller.command_torque()
+        wheel_accel = controller.command_wheel_torques(Tc)
+        solver.set_f_params(I, Ics, AS, mu, Tc, wheel_accel)
 
         # Pointing error calc:
         C_bI_estimate = QtoC(estimate[0:4])
@@ -181,20 +191,35 @@ def main():
 
     fig3 = plt.figure()
 
-    plt.plot(t/T, (180/pi)*pointing_error, '.')
+    plt.plot(t/T, 3600*(180/pi)*pointing_error, '.')
     plt.grid()
     plt.title('Pointing Knowledge Error [Degrees]')
     plt.xlabel('Time [Number of Orbits]')
 
+    fig4 = plt.figure()
+
+    w1 = newstate[:, 4]
+    w2 = newstate[:, 5]
+    w3 = newstate[:, 6]
+
+    plt.plot(t / T, (180 / pi) * w1)
+    plt.plot(t / T, (180 / pi) * w2)
+    plt.plot(t / T, (180 / pi) * w3)
+    plt.grid()
+    plt.title('Body Rates [deg/s]')
+    plt.xlabel('Time [Number of Orbits]')
+    plt.legend(['Body X', 'Body Y', 'Body Z'])
+
     plt.show()
 #main
     
-def propagateTruth(t, state, I, mu):
+def propagateTruth(t, state, I, Ics, As, mu, Tc, wheel_accel):
     E = state[0:3]
     n = state[3]
     w = state[4:7]
-    R = state[10:13]
-    V = state[13:16]
+    w_wheels = state[7:11]
+    R = state[11:14]
+    V = state[14:]
 
     dR = V
     dV = -(mu/norm(R)**3)*R
@@ -205,10 +230,10 @@ def propagateTruth(t, state, I, mu):
     C_bI = QtoC(hstack([E, n]))
     Rb = C_bI @ R
     Tgg = (3*mu/norm(R)**5)*(crux(Rb) @ (I @ Rb))
+    h_w = (As @ Ics) @ w_wheels
+    dw = inv(I) @ (Tgg + Tc - crux(w) @ (I@w + h_w))
 
-    dw = inv(I) @ (Tgg - crux(w)@ (I@w))
-    
-    wwdot = zeros(4)
+    wwdot = wheel_accel
     
     return hstack([dE, dn, dw, wwdot, dR, dV])
 #propagateTruth

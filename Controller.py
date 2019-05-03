@@ -3,27 +3,21 @@ from numpy.linalg import inv
 
 class Controller:
 
-	def __init__(self, sc_inertia, wheel_tilt_angle, wheel_inertias, wheel_rates = None):
+	def __init__(self, sc_inertia, wheel_tilt_angle, wheel_inertias, current_estimate, As, wheel_rates = array([0,0,0,0])):
 
 		#assumes 4 wheels
 
-		s = sin(wheel_tilt_angle)
-		c = cos(wheel_tilt_angle)
-		self.As = array([[s, 0, -s, 0],
-						 [0, s, 0, -s],
-						 [c, c, c,  c]])
+		self.As = As
 		self.As_bar_inv = inv(vstack([self.As, array([1, -1, 1, -1])]))
 
 		self.J = sc_inertia
 		self.Ics = diag(wheel_inertias)
 		self.kp = 1
 		self.kd = 1
+		self.estimate = current_estimate
 
-		if wheel_rates == None:
-			self.wheel_rates = array([0,0,0,0])
-		else:
-			self.wheel_rates = wheel_rates
-		#else
+
+		self.wheel_rates = wheel_rates
 
 		self.E_target = array([0,0,0])
 		self.n_target = 1
@@ -37,6 +31,10 @@ class Controller:
 		return kp, kd
 	#calc_gains
 
+	def getIcs(self):
+		return self.Ics
+	#getIcs
+
 	def set_gains(self, kp, kd):
 		self.kp = kp
 		self.kd = kd
@@ -48,15 +46,23 @@ class Controller:
 		self.w_target = w_target
 	#set_target
 
-	@staticmethod
-	def command_torque(self, E, n, w):
-		E_err = E
-		w_err = w
+	def set_estimate(self, EKF_output):
+		self.estimate = EKF_output
+	#set_estimate
+
+	def get_estimate(self):
+		return self.estimate
+	#get_estimate
+
+	def command_torque(self):
+		# THESE ERRORS NEED TO BE COMPUTED BY A SEPARATE GUIDANCE FUNCTION DEPENDING ON THE MODE:
+		E_err = self.estimate[0:3]
+		w_err = self.estimate[4:7]
 		Tc = -self.kp@E_err -self.kd@w_err
 		return Tc
 	#command_torque
 
-	def command_wheel_rates(self, Tc):
+	def command_wheel_torques(self, Tc):
 		wheel_torques = self.As_bar_inv@hstack([Tc, 0])
 		wheel_acceleration = inv(self.Ics)@wheel_torques
 		return wheel_acceleration
