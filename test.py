@@ -6,8 +6,8 @@ from Controller import *
 
 def main():
 
-    n = 1
-    E = array([0, 0, 0])
+    n = 0.5
+    E = array([0.5, 0.5, 0.5])
     w = array([.01, 0.07, -0.08])
     w_wheels = zeros(4)
 
@@ -29,11 +29,11 @@ def main():
     wheel_cant = pi/8 # [rad]
 
     # Noise estimates (standard deviations) for EKF:
-    PROCESS_NOISE = sqrt(1e-13)
-    MEASUREMENT_NOISE = sqrt(1e-11)
-    COVARIANCE_GUESS = sqrt(1e-9)
+    PROCESS_NOISE = sqrt(1e-12)
+    MEASUREMENT_NOISE = sqrt(1e-12)
+    COVARIANCE_GUESS = sqrt(1e-10)
     STAR_TRACKER_NOISE = sqrt(1e-12)
-    GYRO_NOISE = sqrt(1e-8)
+    GYRO_NOISE = sqrt(1e-12)
 
     aguess = array([1, 5, -3])/norm(array([1,5,-3]))
     thetaguess = 3
@@ -45,13 +45,13 @@ def main():
 
     WHEEL_TILT = 35/180*pi #35 degrees but in radians
     WHEEL_INERTIAS = [Iw]*4
-    DAMPING_RATIO = .1
-    ANGULAR_FREQUENCY = .1
+    DAMPING_RATIO = .65
+    SETTLING_TIME = 30 # [sec]
     E_TARGET = array([0,0,0])
     N_TARGET = 1
     W_TARGET = array([0,0,0])
     controller = Controller(I, WHEEL_TILT, WHEEL_INERTIAS)
-    KP, KD, = controller.calc_gains(DAMPING_RATIO, ANGULAR_FREQUENCY)
+    KP, KD, = controller.calc_gains(DAMPING_RATIO, SETTLING_TIME)
     controller.set_gains(KP, KD)
     controller.set_target(E_TARGET, N_TARGET, W_TARGET)
 
