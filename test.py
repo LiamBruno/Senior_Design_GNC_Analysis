@@ -19,21 +19,21 @@ def main():
 
     # SC Properties:
     L = 3 # [m]
-    W = 3 # [m]
-    H = 5 # [m]
+    W = 4 # [m]
+    H = 7 # [m]
 
-    m = 500 # [kg]
+    m = 2000 # [kg]
 
     I = array([[(1/12)*m*(L**2 + W**2), 0, 0],[0, (1/12)*m*(L**2 + H**2), 0],[0, 0, (1/12)*m*(H**2 + W**2)]])
-    Iw = 20 # Inertia of wheels around spin axis [kg*m^2]
+    Iw = 5 # Inertia of wheels around spin axis [kg*m^2]
     wheel_cant = pi/8 # [rad]
 
     # Noise estimates (standard deviations) for EKF:
     PROCESS_NOISE = sqrt(1e-12)
-    MEASUREMENT_NOISE = sqrt(1e-12)
-    COVARIANCE_GUESS = sqrt(1e-10)
+    MEASUREMENT_NOISE = sqrt(1e-11)
+    COVARIANCE_GUESS = sqrt(1e-9)
     STAR_TRACKER_NOISE = sqrt(1e-12)
-    GYRO_NOISE = sqrt(1e-12)
+    GYRO_NOISE = sqrt(1e-10)
 
     aguess = array([1, 5, -3])/norm(array([1,5,-3]))
     thetaguess = 3
@@ -212,14 +212,15 @@ def main():
 
     fig5 = plt.figure()
 
-    plt.plot(t / T, q_error[:, 0])
-    plt.plot(t / T, q_error[:, 1])
-    plt.plot(t / T, q_error[:, 2])
-    plt.plot(t / T, q_error[:, 3])
+    plt.plot(t / T, newstate[:, 7])
+    plt.plot(t / T, newstate[:, 8])
+    plt.plot(t / T, newstate[:, 9])
+    plt.plot(t / T, newstate[:, 10])
     plt.grid()
-    plt.title('Quaternion Error')
+    plt.title('Wheel Speeds')
     plt.xlabel('Time [Number of Orbits]')
-    plt.legend(['q_i', 'q_j', 'q_k', 'q_r'])
+    plt.ylabel('Angular Speed [rad/s]')
+    plt.legend(['1', '2', '3', '4'])
 
     plt.show()
 #main
