@@ -3,25 +3,15 @@ from numpy.linalg import inv
 
 class Controller:
 
-	def __init__(self, sc_inertia, wheel_inertias, current_estimate, As, wheel_rates = array([0,0,0,0])):
-
-		#assumes 4 wheels
-
-		self.As = As
+	def __init__(self, sc_inertia, wheel_inertias, As, wheel_rates = array([0,0,0,0]), mode = "Nadir"):
+		self.As = As #assumes 4 wheels
 		self.As_bar_inv = inv(vstack([self.As, array([1, -1, 1, -1])]))
-
 		self.J = sc_inertia
 		self.Ics = diag(wheel_inertias)
 		self.kp = 1
 		self.kd = 1
-		self.estimate = current_estimate
-
-
 		self.wheel_rates = wheel_rates
-
-		self.E_target = array([0,0,0])
-		self.n_target = 1
-		self.w_target = array([0,0,0])
+		self.mode = mode
 	#constructor
 
 	def calc_gains(self, damping_ratio, settling_time):
@@ -30,6 +20,10 @@ class Controller:
 		kd = 2*damping_ratio*w_n*self.J
 		return kp, kd
 	#calc_gains
+
+	def set_mode(self, mode):
+		self.mode = mode
+	#set_mode
 
 	def getIcs(self):
 		return self.Ics
@@ -40,12 +34,6 @@ class Controller:
 		self.kd = kd
 	#set_gains
 
-	def set_target(self, E_target, n_target, w_target, clocking = False):
-		self.E_target = E_target
-		self.n_target = n_target
-		self.w_target = w_target
-	#set_target
-
 	def set_estimate(self, EKF_output):
 		self.estimate = EKF_output
 	#set_estimate
@@ -54,10 +42,24 @@ class Controller:
 		return self.estimate
 	#get_estimate
 
-	def command_torque(self):
-		# THESE ERRORS NEED TO BE COMPUTED BY A SEPARATE GUIDANCE FUNCTION DEPENDING ON THE MODE:
-		E_err = self.estimate[0:3]
-		w_err = self.estimate[4:7]
+	def getError(self, eps, eta, w, R = None, V = None, UTC = None):
+		if self.mode == "Nadir":
+			C_bI = QtoC(hstack([eps, eta]))
+			h = cross(R, V)
+			zhat = -R / norm(R)
+			yhat = -h / norm(h)
+			xhat = cross(yhat, zhat)
+			C_LVLH_ECI = vstack([xhat, yhat, zhat])
+			C_b_LVLH = C_bI @ (C_LVLH_ECI.transpose())
+			eps_e = CtoQ(C_b_LVLH)[0:3]
+			w_c = C_bI @ (h / (norm(R) ** 2))
+			w_e = w - w_c
+			return eps_e, w_e
+		#if
+	#getError
+
+	def command_torque(self, eps, eta, w, R = None, V = None, UTC = None):
+		E_err, w_err = self.getError(eps, eta, w, R, V, UTC)
 		Tc = -self.kp@E_err -self.kd@w_err
 		return Tc
 	#command_torque

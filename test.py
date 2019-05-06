@@ -32,6 +32,8 @@ def main():
     COVARIANCE_GUESS = sqrt(1e-9)
     STAR_TRACKER_NOISE = sqrt(1e-12)
     GYRO_NOISE = sqrt(1e-10)
+    POS_NOISE = sqrt(1e-2) # [km^1/2]
+    VEL_NOISE = sqrt(1e-3) # [(km/s)^1/2]
 
     # Initial EKF estimate:
     aguess = array([1, 5, -3])/norm(array([1, 5, -3]))
@@ -44,13 +46,10 @@ def main():
     EKF = StarTracker_Filter(Eguess, nguess, w_guess, I, Iw, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS)
 
     # Actuator Properties and Configuration:
-    WHEEL_TILT = 35*(pi/180) # [rad]
+    WHEEL_TILT = 50*(pi/180) # [rad]
     WHEEL_INERTIAS = [Iw]*4 # [kg*m^2]
-    DAMPING_RATIO = .70
+    DAMPING_RATIO = .65
     SETTLING_TIME =  5*60# [sec]
-    E_TARGET = array([0,0,0])
-    N_TARGET = 1
-    W_TARGET = array([0,0,0])
     s = sin(WHEEL_TILT)
     c = cos(WHEEL_TILT)
     AS = array([[s, 0, -s, 0],
@@ -58,10 +57,11 @@ def main():
                 [c, c, c,  c]])
 
     # Instantiate Controller Object:
-    controller = Controller(I, WHEEL_INERTIAS, EKF.getState(), AS)
+    R0_guess = R + random.normal(0, POS_NOISE, (3,))
+    V0_guess = V + random.normal(0, VEL_NOISE, (3,))
+    controller = Controller(I, WHEEL_INERTIAS, EKF.getState(), R0_guess, V0_guess, AS)
     KP, KD, = controller.calc_gains(DAMPING_RATIO, SETTLING_TIME)
     controller.set_gains(KP, KD)
-    controller.set_target(E_TARGET, N_TARGET, W_TARGET) # Sets desired profile
 
     state = hstack([E, n, w, w_wheels, R, V])
 
@@ -95,6 +95,7 @@ def main():
     C_bI_true = QtoC(solver.y[0:4])
     z_I_true = C_bI_true[2, :]
     pointing_error.append(angleBetween(z_I_true, z_I_estimate))
+    Tc = zeros(3)
 
     percentage = 10
     while solver.successful() and (solver.t < tspan):
@@ -114,13 +115,15 @@ def main():
         # Update the filter:
         measurement = hstack([q_measurement, w_measurement])
         measurements.append(measurement)
-        estimate = EKF.update(measurement, dt)
+        estimate = EKF.update(measurement, dt, Tc)
         ang_vel_error.append(norm(estimate[4:7]) - norm(solver.y[4:7]))
         state_estimate.append(estimate)
-        controller.set_estimate(estimate)
-        Tc = controller.command_torque()
-        wheel_accel = controller.command_wheel_torques(Tc)
-        solver.set_f_params(I, I_cs, AS, mu, Tc, wheel_accel)
+        if solver.t > 5*60:
+            controller.set_estimate(estimate)
+            Tc = controller.command_torque()
+            wheel_accel = controller.command_wheel_torques(Tc)
+            solver.set_f_params(I, I_cs, AS, mu, Tc, wheel_accel)
+        #if
 
         # Pointing error calc:
         C_bI_estimate = QtoC(estimate[0:4])
@@ -134,7 +137,6 @@ def main():
         q_e = q_true.conjugate*q_estimate
         q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
         completion = solver.t/tspan*100
-
         # Progress:
         if completion > percentage:
             print(percentage,"percent complete")
@@ -196,7 +198,7 @@ def main():
 
     plt.semilogy(t/T, 3600*(180/pi)*pointing_error, '.')
     plt.grid()
-    plt.title('Pointing Knowledge Error [Degrees]')
+    plt.title('Pointing Knowledge Error [Arcseconds]')
     plt.xlabel('Time [Number of Orbits]')
 
     fig4 = plt.figure()
@@ -246,7 +248,7 @@ def propagateTruth(t, state, I, Ics, As, mu, Tc, wheel_accel):
     Rb = C_bI @ R
     Tgg = (3*mu/norm(R)**5)*(crux(Rb) @ (I @ Rb))
     h_w = As @ (Ics @ w_wheels)
-    dw = inv(I) @ (Tgg + Tc - crux(w) @ (I@w + h_w))
+    dw = inv(I) @ (Tc - crux(w) @ (I@w + h_w))
 
     wwdot = wheel_accel
     
