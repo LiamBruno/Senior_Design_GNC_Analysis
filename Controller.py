@@ -3,7 +3,7 @@ from numpy.linalg import inv
 
 class Controller:
 
-	def __init__(self, sc_inertia, wheel_tilt_angle, wheel_inertias, current_estimate, As, wheel_rates = array([0,0,0,0])):
+	def __init__(self, sc_inertia, wheel_inertias, current_estimate, As, wheel_rates = array([0,0,0,0])):
 
 		#assumes 4 wheels
 
@@ -67,3 +67,5 @@ class Controller:
 		wheel_acceleration = inv(self.Ics)@wheel_torques
 		return wheel_acceleration
 	#command_wheel_rates
+
+#controller

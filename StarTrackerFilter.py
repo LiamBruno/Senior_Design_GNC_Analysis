@@ -3,31 +3,19 @@ from AERO_TOOLKIT_NEW import *
 
 class StarTracker_Filter:
 
-	def __init__(self, E_initial, n_initial , w_initial, I_sc, Iwheels, wheel_cant, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS):
-
-		self.I_sc = I_sc
+	def __init__(self, E_initial, n_initial , w_initial, I_sc, Iwheels, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS):
+		self.I_sc = 1.05*I_sc
 		self.Iwheels = Iwheels
 		self.H = identity(7)
 		self.state = hstack([E_initial, n_initial, w_initial])
 		self.P = (COVARIANCE_GUESS**2)*identity(7)
 		self.Q = (PROCESS_NOISE**2)*identity(7)
 		self.R = (MEASUREMENT_NOISE**2)*identity(7)
-		self.wheel_cant = wheel_cant
-
 		solver = ode(propagateEKF)
 		solver.set_integrator('lsoda')
 		solver.set_initial_value(self.state, 0)
 		solver.set_f_params(self.I_sc)
-
 		self.integrator = solver
-
-		hs = []
-		for i in range(4):
-			hs.append(array([cos(wheel_cant)*cos(90*i),
-							 cos(wheel_cant)*cos(90*i),
-							 sin(wheel_cant)]).T)
-		#for
-		self.T = hstack(hs)
 	#constructor
 
 	def calcPhi(self, dt):

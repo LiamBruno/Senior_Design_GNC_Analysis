@@ -6,11 +6,11 @@ from Controller import *
 
 def main():
 
+    # Initial state:
     n = 0.5
     E = array([0.5, 0.5, 0.5])
-    w = array([.01, 0.07, -0.08])
+    w = array([0, 0, 0])
     w_wheels = zeros(4)
-
     mu = 4.9048695e3 # [km^3/s^2]
     Rm = 1731
     R = array([Rm + 100, 0, 0]) # [km]
@@ -18,15 +18,13 @@ def main():
     T = 2*pi*sqrt(norm(R)**3/mu)
 
     # SC Properties:
-    L = 3 # [m]
-    W = 4 # [m]
-    H = 7 # [m]
+    I = diag(array([5000, 12000, 13000])) # Inertia matrix in principal body frame [kg*m^2]
 
-    m = 2000 # [kg]
-
-    I = array([[(1/12)*m*(L**2 + W**2), 0, 0],[0, (1/12)*m*(L**2 + H**2), 0],[0, 0, (1/12)*m*(H**2 + W**2)]])
-    Iw = 5 # Inertia of wheels around spin axis [kg*m^2]
-    wheel_cant = pi/8 # [rad]
+    # Wheel properties:
+    m = 50 # [kg]
+    r = .3 # [m]
+    h = .1 # [m]
+    Iw = (1/2)*m*r**2 # Inertia of wheels around spin axis [kg*m^2]
 
     # Noise estimates (standard deviations) for EKF:
     PROCESS_NOISE = sqrt(1e-12)
@@ -35,18 +33,21 @@ def main():
     STAR_TRACKER_NOISE = sqrt(1e-12)
     GYRO_NOISE = sqrt(1e-10)
 
-    aguess = array([1, 5, -3])/norm(array([1,5,-3]))
+    # Initial EKF estimate:
+    aguess = array([1, 5, -3])/norm(array([1, 5, -3]))
     thetaguess = 3
     Eguess = aguess*sin(thetaguess/2)
     nguess = cos(thetaguess/2)
     w_guess = array([0.05, 0.05, -0.05])
 
-    EKF = StarTracker_Filter(Eguess, nguess, w_guess,  I, Iw, wheel_cant, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS)
+    # Instantiate EKF object:
+    EKF = StarTracker_Filter(Eguess, nguess, w_guess, I, Iw, PROCESS_NOISE, MEASUREMENT_NOISE, COVARIANCE_GUESS)
 
-    WHEEL_TILT = 35*(pi/180) #35 degrees but in radians
-    WHEEL_INERTIAS = [Iw]*4
-    DAMPING_RATIO = .65
-    SETTLING_TIME = 30 # [sec]
+    # Actuator Properties and Configuration:
+    WHEEL_TILT = 35*(pi/180) # [rad]
+    WHEEL_INERTIAS = [Iw]*4 # [kg*m^2]
+    DAMPING_RATIO = .70
+    SETTLING_TIME =  5*60# [sec]
     E_TARGET = array([0,0,0])
     N_TARGET = 1
     W_TARGET = array([0,0,0])
@@ -54,22 +55,24 @@ def main():
     c = cos(WHEEL_TILT)
     AS = array([[s, 0, -s, 0],
                 [0, s, 0, -s],
-                [c, c, c, c]])
-    controller = Controller(I, WHEEL_TILT, WHEEL_INERTIAS, EKF.getState(), AS)
+                [c, c, c,  c]])
+
+    # Instantiate Controller Object:
+    controller = Controller(I, WHEEL_INERTIAS, EKF.getState(), AS)
     KP, KD, = controller.calc_gains(DAMPING_RATIO, SETTLING_TIME)
     controller.set_gains(KP, KD)
-    controller.set_target(E_TARGET, N_TARGET, W_TARGET)
+    controller.set_target(E_TARGET, N_TARGET, W_TARGET) # Sets desired profile
 
     state = hstack([E, n, w, w_wheels, R, V])
 
-    dt = 0.5
+    dt = .5
     solver = ode(propagateTruth)
-    solver.set_integrator('dopri5', max_step = dt)
+    solver.set_integrator('lsoda', max_step = dt, atol = 1e-8, rtol = 1e-8)
     solver.set_initial_value(state, 0)
-    Ics = controller.getIcs()
-    solver.set_f_params(I, Ics, AS, mu, zeros(3), zeros(4))
+    I_cs = controller.getIcs()
+    solver.set_f_params(I, I_cs, AS, mu, zeros(3), zeros(4))
     
-    tspan = T/10 # Total simulation time [sec]
+    tspan = T/5 # Total simulation time [sec]
     t = [] # [sec]
     newstate = []
     measurements = []
@@ -117,7 +120,7 @@ def main():
         controller.set_estimate(estimate)
         Tc = controller.command_torque()
         wheel_accel = controller.command_wheel_torques(Tc)
-        solver.set_f_params(I, Ics, AS, mu, Tc, wheel_accel)
+        solver.set_f_params(I, I_cs, AS, mu, Tc, wheel_accel)
 
         # Pointing error calc:
         C_bI_estimate = QtoC(estimate[0:4])
@@ -191,7 +194,7 @@ def main():
 
     fig3 = plt.figure()
 
-    plt.plot(t/T, 3600*(180/pi)*pointing_error, '.')
+    plt.semilogy(t/T, 3600*(180/pi)*pointing_error, '.')
     plt.grid()
     plt.title('Pointing Knowledge Error [Degrees]')
     plt.xlabel('Time [Number of Orbits]')
@@ -212,14 +215,14 @@ def main():
 
     fig5 = plt.figure()
 
-    plt.plot(t / T, newstate[:, 7])
-    plt.plot(t / T, newstate[:, 8])
-    plt.plot(t / T, newstate[:, 9])
-    plt.plot(t / T, newstate[:, 10])
+    plt.plot(t / T, Iw*newstate[:, 7])
+    plt.plot(t / T, Iw*newstate[:, 8])
+    plt.plot(t / T, Iw*newstate[:, 9])
+    plt.plot(t / T, Iw*newstate[:, 10])
     plt.grid()
-    plt.title('Wheel Speeds')
+    plt.title('Wheel Momentum Storage')
     plt.xlabel('Time [Number of Orbits]')
-    plt.ylabel('Angular Speed [rad/s]')
+    plt.ylabel('Angular Momentum [Nms]')
     plt.legend(['1', '2', '3', '4'])
 
     plt.show()
@@ -242,7 +245,7 @@ def propagateTruth(t, state, I, Ics, As, mu, Tc, wheel_accel):
     C_bI = QtoC(hstack([E, n]))
     Rb = C_bI @ R
     Tgg = (3*mu/norm(R)**5)*(crux(Rb) @ (I @ Rb))
-    h_w = (As @ Ics) @ w_wheels
+    h_w = As @ (Ics @ w_wheels)
     dw = inv(I) @ (Tgg + Tc - crux(w) @ (I@w + h_w))
 
     wwdot = wheel_accel
