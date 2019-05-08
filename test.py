@@ -4,6 +4,9 @@ from pyquaternion import *
 import matplotlib.pyplot as plt
 from Controller import *
 
+from datetime import datetime
+from datetime import timedelta
+
 def main():
 
     # Initial state:
@@ -16,6 +19,10 @@ def main():
     R = array([Rm + 100, 0, 0]) # [km]
     V = array([0, sqrt(mu/norm(R)), 0])
     T = 2*pi*sqrt(norm(R)**3/mu)
+
+    C_PRINC_BODY = Cx(0)@Cy(0)@Cz(0)
+
+    utc = datetime(year = 2019, month = 5, day = 8)
 
     # SC Properties:
     I = diag(array([5000, 12000, 13000])) # Inertia matrix in principal body frame [kg*m^2]
@@ -32,8 +39,8 @@ def main():
     COVARIANCE_GUESS = sqrt(1e-9)
     STAR_TRACKER_NOISE = sqrt(1e-12)
     GYRO_NOISE = sqrt(1e-10)
-    POS_NOISE = sqrt(1e-2) # [km^1/2]
-    VEL_NOISE = sqrt(1e-3) # [(km/s)^1/2]
+    POS_NOISE =  0 #sqrt(1e-2) # [km^1/2]
+    VEL_NOISE = 0 #sqrt(1e-3) # [(km/s)^1/2]
 
     # Initial EKF estimate:
     aguess = array([1, 5, -3])/norm(array([1, 5, -3]))
@@ -47,7 +54,7 @@ def main():
 
     # Actuator Properties and Configuration:
     WHEEL_TILT = 50*(pi/180) # [rad]
-    WHEEL_INERTIAS = [Iw]*4 # [kg*m^2]
+    WHEEL_INERTIAS = diag([Iw]*4) # [kg*m^2]
     DAMPING_RATIO = .65
     SETTLING_TIME =  5*60# [sec]
     s = sin(WHEEL_TILT)
@@ -59,51 +66,57 @@ def main():
     # Instantiate Controller Object:
     R0_guess = R + random.normal(0, POS_NOISE, (3,))
     V0_guess = V + random.normal(0, VEL_NOISE, (3,))
-    controller = Controller(I, WHEEL_INERTIAS, EKF.getState(), R0_guess, V0_guess, AS)
+
+    controller = Controller(I, WHEEL_INERTIAS, AS, C_PRINC_BODY)
     KP, KD, = controller.calc_gains(DAMPING_RATIO, SETTLING_TIME)
     controller.set_gains(KP, KD)
+    controller.set_mode("Nadir")
 
     state = hstack([E, n, w, w_wheels, R, V])
 
-    dt = .5
+    dt = .25
     solver = ode(propagateTruth)
     solver.set_integrator('lsoda', max_step = dt, atol = 1e-8, rtol = 1e-8)
     solver.set_initial_value(state, 0)
-    I_cs = controller.getIcs()
-    solver.set_f_params(I, I_cs, AS, mu, zeros(3), zeros(4))
+    solver.set_f_params(I, WHEEL_INERTIAS, AS, mu, zeros(3), zeros(4))
     
-    tspan = T/5 # Total simulation time [sec]
+    tspan = T # Total simulation time [sec]
     t = [] # [sec]
     newstate = []
     measurements = []
     state_estimate = []
     ang_vel_error = []
     q_error = []
-
-    newstate.append(solver.y)
-    t.append(solver.t)
-    state_estimate.append(EKF.getState())
-    q_true = Quaternion(array = solver.y[0:4])
-    q_estimate = Quaternion(array = EKF.getState()[0:4])
-    q_e = q_true.conjugate*q_estimate
-    q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
     pointing_error = []
+    utcs = []
+    angle_off_nadir = []
 
-    # Pointing error calc:
-    C_bI_estimate = QtoC(EKF.getState()[0:4])
-    z_I_estimate = C_bI_estimate[2, :]
-    C_bI_true = QtoC(solver.y[0:4])
-    z_I_true = C_bI_true[2, :]
-    pointing_error.append(angleBetween(z_I_true, z_I_estimate))
+    # newstate.append(solver.y)
+    # t.append(solver.t)
+    # state_estimate.append(EKF.getState())
+    # q_true = Quaternion(array = solver.y[0:4])
+    # q_estimate = Quaternion(array = EKF.getState()[0:4])
+    # q_e = q_true.conjugate*q_estimate
+    # q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
+    
+
+    # # Pointing error calc:
+    # C_bI_estimate = QtoC(EKF.getState()[0:4])
+    # z_I_estimate = C_bI_estimate[2, :]
+    # C_bI_true = QtoC(solver.y[0:4])
+    # z_I_true = C_bI_true[2, :]
+    # pointing_error.append(angleBetween(z_I_true, z_I_estimate))
+    # 
+
+    # utcs.append(utc)
+    # angle_off_nadir.append(angleBetween)
+
     Tc = zeros(3)
-
     percentage = 10
     while solver.successful() and (solver.t < tspan):
 
-        # Integrate:
-        solver.integrate(solver.t + dt)
-        t.append(solver.t)
-        newstate.append(solver.y)
+        #Record Time
+        utcs.append(utc)
 
         # Simulate measurements:
         q_true = Quaternion(array = array([solver.y[3], solver.y[0], solver.y[1], solver.y[2]]))
@@ -119,25 +132,50 @@ def main():
         ang_vel_error.append(norm(estimate[4:7]) - norm(solver.y[4:7]))
         state_estimate.append(estimate)
         if solver.t > 5*60:
-            controller.set_estimate(estimate)
-            Tc = controller.command_torque()
+            eps = estimate[0:3]
+            eta = estimate[3]
+            w = estimate[4:7]
+            R = solver.y[11:14]
+            V = solver.y[14:]
+            Tc = controller.command_torque(eps, eta, w, R, V, utc)
             wheel_accel = controller.command_wheel_torques(Tc)
-            solver.set_f_params(I, I_cs, AS, mu, Tc, wheel_accel)
+            solver.set_f_params(I, WHEEL_INERTIAS, AS, mu, Tc, wheel_accel)
         #if
 
         # Pointing error calc:
-        C_bI_estimate = QtoC(estimate[0:4])
-        z_I_estimate = C_bI_estimate[2, :]
-        C_bI_true = QtoC(solver.y[0:4])
-        z_I_true = C_bI_true[2, :]
+        C_princ_inertial_estimate = QtoC(estimate[0:4])
+        z_I_estimate = C_princ_inertial_estimate[2, :]
+        C_princ_inertial_true = QtoC(solver.y[0:4])
+        z_I_true = C_princ_inertial_true[2, :]
         pointing_error.append(angleBetween(z_I_true, z_I_estimate))
 
-        # Quaternion error calc:
+        #Angle from Nadir Calc
+        z_body = array([0,0,1])
+        z_princ = C_PRINC_BODY@z_body
+        z_inertial = C_princ_inertial_true.T@z_princ
+        nadir = -solver.y[11:14]/norm(solver.y[11:14])
+        nadir_angle = angleBetween(z_inertial, nadir)
+        angle_off_nadir.append(nadir_angle)
+
+
+        # Kalman Quaternion error calc:
         q_estimate = Quaternion(array = array([estimate[3], estimate[0], estimate[1], estimate[2]]))
         q_e = q_true.conjugate*q_estimate
         q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
-        completion = solver.t/tspan*100
+        
+
+        # Integrate:
+        solver.integrate(solver.t + dt)
+        t.append(solver.t)
+        newstate.append(solver.y)
+
+        #increment time
+        utc += timedelta(seconds = dt)
+        
+
+
         # Progress:
+        completion = solver.t/tspan*100
         if completion > percentage:
             print(percentage,"percent complete")
             percentage+= 10
@@ -149,6 +187,7 @@ def main():
     state_estimate = vstack(state_estimate)
     q_error = vstack(q_error)
     pointing_error = hstack(pointing_error)
+    angle_off_nadir = hstack(angle_off_nadir)
 
     fig, axes1 = plt.subplots(4, 1, squeeze = False)
 
@@ -176,7 +215,7 @@ def main():
     plt.plot(t/T, q_error[:, 2])
     plt.plot(t/T, q_error[:, 3])
     plt.grid()
-    plt.title('Quaternion Error')
+    plt.title('Kalman Filter Quaternion Estimate Error')
     plt.xlabel('Time [Number of Orbits]')
     plt.legend(['q_i', 'q_j', 'q_k', 'q_r'])
 
@@ -227,6 +266,13 @@ def main():
     plt.ylabel('Angular Momentum [Nms]')
     plt.legend(['1', '2', '3', '4'])
 
+    fig6 = plt.figure()
+    plt.plot(t/T, angle_off_nadir*180/pi)
+    plt.grid()
+    plt.title('Angle from Body +Z to Nadir')
+    plt.xlabel('Time [Number of Orbits]')
+    plt.ylabel('Angle [rad]')
+
     plt.show()
 #main
     
@@ -244,9 +290,9 @@ def propagateTruth(t, state, I, Ics, As, mu, Tc, wheel_accel):
     dE = .5*(n*identity(3) + crux(E))@w
     dn = -.5*dot(E, w)
 
-    C_bI = QtoC(hstack([E, n]))
-    Rb = C_bI @ R
-    Tgg = (3*mu/norm(R)**5)*(crux(Rb) @ (I @ Rb))
+    C_princ_inertial = QtoC(hstack([E, n]))
+    Rprinc = C_princ_inertial @ R
+    Tgg = (3*mu/norm(R)**5)*(crux(Rprinc) @ (I @ Rprinc))
     h_w = As @ (Ics @ w_wheels)
     dw = inv(I) @ (Tc - crux(w) @ (I@w + h_w))
 

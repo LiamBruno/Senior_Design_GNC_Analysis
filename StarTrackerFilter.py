@@ -47,10 +47,10 @@ class StarTracker_Filter:
 		return self.integrator.y
 	#predict_with_ode
 
-	def getdstate(self, Tc):
-		E = self.state[0:3]
-		n = self.state[3]
-		w = self.state[4:7]
+	def getdstate(self, predicted_state, Tc):
+		E = predicted_state[0:3]
+		n = predicted_state[3]
+		w = predicted_state[4:7]
 		dE = .5 * (n * identity(3) + crux(E)) @ w
 		dn = -.5 * dot(E, w)
 		dw = inv(self.I_sc) @ (Tc - crux(w) @ (self.I_sc @ w))
@@ -59,9 +59,10 @@ class StarTracker_Filter:
 
 	def predict_euler(self, dt, Tc):
 		predicted_state = self.state
-		for i in range(10):
-			dstate = self.getdstate(Tc)
-			predicted_state += dstate*(dt/10)
+		steps = 5
+		for i in range(steps):
+			dstate = self.getdstate(predicted_state, Tc)
+			predicted_state += dstate*(dt/steps)
 		#for
 		return predicted_state
 	#predict_euler

@@ -574,6 +574,17 @@ def QtoC(q):
     return (2*eta**2 - 1)*identity(3) + 2*outer(eps, eps) - 2*eta*vecCross(eps)
 # QtoC
 
+def CtoQ(C):
+    n = sqrt(trace(C) + 1)/2
+
+    E1 = (C[1][2] - C[2][1])/(4*n)
+    E2 = (C[2][0] - C[0][2])/(4*n)
+    E3 = (C[0][1] - C[1][0])/(4*n)
+    E = hstack([E1, E2, E3])
+
+    return hstack([E,n])
+
+
 def vecCross(v):
     r1 = array([0, -v[2], v[1]])
     r2 = array([v[2], 0, -v[0]])
@@ -596,3 +607,13 @@ def propagateEKF(t, state, I):
     dw = inv(I) @ (-crux(w) @ (I@w))
     return hstack([dE, dn, dw])
 # propagateEKF
+
+def quat_mult(E1, n1, E2, n2):
+
+    # q1 *q2
+
+    E3 = n1*E2 + n2*E1 + crux(E1)@E2
+    n3 = n2*n1 - dot(E1, E2)
+
+    return E3, n3
+#quat_mult
