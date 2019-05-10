@@ -20,12 +20,19 @@ def main():
     V = array([0, sqrt(mu/norm(R)), 0])
     T = 2*pi*sqrt(norm(R)**3/mu)
 
-    C_PRINC_BODY = Cx(0)@Cy(0)@Cz(0)
+    # SC Properties:
+    I = diag(array([11238.19347708, 10175.29654, 2630.01998292])) # Inertia matrix in principal body frame [kg*m^2]
+    C_PRINC_BODY = array([[ 9.97131595e-01, -7.56395929e-02,  2.68965872e-03],
+                          [-7.56820738e-02, -9.96853200e-01,  2.35779719e-02],
+                          [-8.97766702e-04,  2.37138997e-02,  9.99718383e-01]])
+    C_PRINC_BODY[:,2] = -C_PRINC_BODY[:,2]
+
+    print(cross(C_PRINC_BODY[:,0], C_PRINC_BODY[:,1]) - C_PRINC_BODY[2])
+    print(linalg.det(C_PRINC_BODY))
 
     utc = datetime(year = 2019, month = 5, day = 8)
 
-    # SC Properties:
-    I = diag(array([5000, 12000, 13000])) # Inertia matrix in principal body frame [kg*m^2]
+    
 
     # Wheel properties:
     m = 50 # [kg]
@@ -34,7 +41,7 @@ def main():
     Iw = (1/2)*m*r**2 # Inertia of wheels around spin axis [kg*m^2]
 
     dt = .25
-    tspan = int(T) # Total simulation time [sec]
+    tspan = int(T/5) # Total simulation time [sec]
 
     # Noise estimates (standard deviations) for EKF:
     PROCESS_NOISE = sqrt(1e-12)
@@ -87,15 +94,15 @@ def main():
     num_pts = int(tspan/dt)
     t = zeros(num_pts)
 
-    t = [] # [sec]
-    newstate = []
-    measurements = []
-    state_estimate = []
-    ang_vel_error = []
-    q_error = []
-    pointing_error = []
+    t = zeros(num_pts) # [sec]
+    newstate = zeros((num_pts, 17))
+    measurements = zeros((num_pts, 7))
+    state_estimate = zeros((num_pts, 7))
+    ang_vel_error = zeros((num_pts, 3))
+    q_error = zeros((num_pts, 4))
+    pointing_error = zeros(num_pts)
     utcs = []
-    angle_off_nadir = []
+    angle_off_nadir = zeros(num_pts)
 
     # newstate.append(solver.y)
     # t.append(solver.t)
@@ -119,10 +126,7 @@ def main():
 
     Tc = zeros(3)
     percentage = 10
-    while solver.successful() and (solver.t < tspan):
-
-        #Record Time
-        utcs.append(utc)
+    for i in range(num_pts):
 
         # Simulate measurements:
         q_true = Quaternion(array = array([solver.y[3], solver.y[0], solver.y[1], solver.y[2]]))
@@ -133,10 +137,9 @@ def main():
 
         # Update the filter:
         measurement = hstack([q_measurement, w_measurement])
-        measurements.append(measurement)
+        
         estimate = EKF.update(measurement, dt, Tc)
-        ang_vel_error.append(norm(estimate[4:7]) - norm(solver.y[4:7]))
-        state_estimate.append(estimate)
+        
         if solver.t > 5*60:
             eps = estimate[0:3]
             eta = estimate[3]
@@ -153,7 +156,7 @@ def main():
         z_I_estimate = C_princ_inertial_estimate[2, :]
         C_princ_inertial_true = QtoC(solver.y[0:4])
         z_I_true = C_princ_inertial_true[2, :]
-        pointing_error.append(angleBetween(z_I_true, z_I_estimate))
+        
 
         #Angle from Nadir Calc
         z_body = array([0,0,1])
@@ -161,22 +164,32 @@ def main():
         z_inertial = C_princ_inertial_true.T@z_princ
         nadir = -solver.y[11:14]/norm(solver.y[11:14])
         nadir_angle = angleBetween(z_inertial, nadir)
-        angle_off_nadir.append(nadir_angle)
+        
 
 
         # Kalman Quaternion error calc:
         q_estimate = Quaternion(array = array([estimate[3], estimate[0], estimate[1], estimate[2]]))
         q_e = q_true.conjugate*q_estimate
-        q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
+        
         
 
         # Integrate:
         solver.integrate(solver.t + dt)
-        t.append(solver.t)
-        newstate.append(solver.y)
+        
 
         #increment time
         utc += timedelta(seconds = dt)
+
+        #save data
+        t[i] = solver.t
+        newstate[i] = solver.y
+        q_error[i] = array([q_e[1], q_e[2], q_e[3], q_e[0]])
+        angle_off_nadir[i] = nadir_angle
+        pointing_error[i] = angleBetween(z_I_true, z_I_estimate)
+        ang_vel_error[i] = norm(estimate[4:7]) - norm(solver.y[4:7])
+        state_estimate[i] = estimate
+        measurements[i] = measurement
+        utcs.append(utc)
         
 
 
@@ -188,12 +201,12 @@ def main():
         #if
     #while
 
-    t = hstack(t)
-    newstate = vstack(newstate)
-    state_estimate = vstack(state_estimate)
-    q_error = vstack(q_error)
-    pointing_error = hstack(pointing_error)
-    angle_off_nadir = hstack(angle_off_nadir)
+    # t = hstack(t)
+    # newstate = vstack(newstate)
+    # state_estimate = vstack(state_estimate)
+    # q_error = vstack(q_error)
+    # pointing_error = hstack(pointing_error)
+    # angle_off_nadir = hstack(angle_off_nadir)
 
     fig, axes1 = plt.subplots(4, 1, squeeze = False)
 
@@ -300,7 +313,7 @@ def propagateTruth(t, state, I, Ics, As, mu, Tc, wheel_accel):
     Rprinc = C_princ_inertial @ R
     Tgg = (3*mu/norm(R)**5)*(crux(Rprinc) @ (I @ Rprinc))
     h_w = As @ (Ics @ w_wheels)
-    dw = inv(I) @ (Tc - crux(w) @ (I@w + h_w))
+    dw = inv(I) @ (Tc + Tgg - crux(w) @ (I@w + h_w))
 
     wwdot = wheel_accel
     

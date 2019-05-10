@@ -574,15 +574,56 @@ def QtoC(q):
     return (2*eta**2 - 1)*identity(3) + 2*outer(eps, eps) - 2*eta*vecCross(eps)
 # QtoC
 
-def CtoQ(C):
-    n = sqrt(trace(C) + 1)/2
+def CtoQ( C ):
+    E = zeros(3)
+    n = 0
+    tr = trace(C)
 
-    E1 = (C[1][2] - C[2][1])/(4*n)
-    E2 = (C[2][0] - C[0][2])/(4*n)
-    E3 = (C[0][1] - C[1][0])/(4*n)
-    E = hstack([E1, E2, E3])
+    if (tr > 0):
+        n = sqrt( tr + 1 )/2
 
-    return hstack([E,n])
+        E[0] = (C[1, 2] - C[2, 1])/(4*n)
+        E[1] = (C[2, 0] - C[0, 2])/(4*n) 
+        E[2] = (C[0, 1] - C[1, 0])/(4*n) 
+    else:
+        d = diag(C)
+        if max(d) == d[1]:
+
+            sq_trace = sqrt(d[1] - d[0] - d[2] + 1 )
+
+            E[1] = .5*sq_trace 
+
+            if sq_trace != 0:
+                sq_trace = .5/sq_trace
+
+            n    = (C[2, 0] - C[0, 2])*sq_trace 
+            E[0] = (C[0, 1] + C[1, 0])*sq_trace
+            E[2] = (C[1, 2] + C[2, 1])*sq_trace
+
+        elif max(d) == d[2]:
+            sq_trace = sqrt(d[2] - d[0] - d[1] + 1)
+
+            E[2] = .5*sq_trace 
+
+            if sq_trace != 0:
+                sq_trace = .5/sq_trace
+
+            n    = (C[0, 1] - C[1, 0])*sq_trace
+            E[0] = (C[2, 0] + C[0, 2])*sq_trace 
+            E[1] = (C[1, 2] + C[2, 1])*sq_trace
+        else:
+            sq_trace = sqrt(d[0] - d[1] - d[2] + 1)
+
+            E[0] = .5*sq_trace 
+
+            if sq_trace != 0:
+                sq_trace = .5/sq_trace
+
+            n    = (C[1, 2] - C[2, 1])*sq_trace 
+            E[1] = (C[0, 1] + C[1, 0])*sq_trace
+            E[2] = (C[2, 0] + C[0, 2])*sq_trace
+
+    return hstack([E, n])
 
 
 def vecCross(v):
