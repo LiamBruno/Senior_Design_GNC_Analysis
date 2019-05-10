@@ -8,7 +8,7 @@ class Controller:
 	def __init__(self, sc_inertia, wheel_inertias, As, C_principal_body, wheel_rates = array([0,0,0,0]), mode = "Nadir"):
 		self.As = As #assumes 4 wheels
 		self.As_bar_inv = inv(vstack([self.As, array([1, -1, 1, -1])]))
-		self.J = sc_inertia
+		self.J = sc_inertia*1.05
 		self.Ics = wheel_inertias
 		self.kp = 1
 		self.kd = 1
