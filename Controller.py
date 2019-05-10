@@ -66,7 +66,7 @@ class Controller:
 	#command_torque
 
 	def command_wheel_torques(self, Tc):
-		wheel_torques = self.As_bar_inv@hstack([Tc, 0])
+		wheel_torques = self.As_bar_inv@hstack([-Tc, 0])
 		wheel_acceleration = inv(self.Ics)@wheel_torques
 		return wheel_acceleration
 	#command_wheel_rates
