@@ -33,14 +33,17 @@ def main():
     h = .1 # [m]
     Iw = (1/2)*m*r**2 # Inertia of wheels around spin axis [kg*m^2]
 
+    dt = .25
+    tspan = int(T) # Total simulation time [sec]
+
     # Noise estimates (standard deviations) for EKF:
     PROCESS_NOISE = sqrt(1e-12)
     MEASUREMENT_NOISE = sqrt(1e-11)
     COVARIANCE_GUESS = sqrt(1e-9)
     STAR_TRACKER_NOISE = sqrt(1e-12)
     GYRO_NOISE = sqrt(1e-10)
-    POS_NOISE =  0 #sqrt(1e-2) # [km^1/2]
-    VEL_NOISE = 0 #sqrt(1e-3) # [(km/s)^1/2]
+    POS_NOISE =  sqrt(1e-2) # [km^1/2]
+    VEL_NOISE = sqrt(1e-2) # [(km/s)^1/2]
 
     # Initial EKF estimate:
     aguess = array([1, 5, -3])/norm(array([1, 5, -3]))
@@ -74,13 +77,16 @@ def main():
 
     state = hstack([E, n, w, w_wheels, R, V])
 
-    dt = .25
+    
     solver = ode(propagateTruth)
     solver.set_integrator('lsoda', max_step = dt, atol = 1e-8, rtol = 1e-8)
     solver.set_initial_value(state, 0)
     solver.set_f_params(I, WHEEL_INERTIAS, AS, mu, zeros(3), zeros(4))
     
-    tspan = T # Total simulation time [sec]
+    
+    num_pts = int(tspan/dt)
+    t = zeros(num_pts)
+
     t = [] # [sec]
     newstate = []
     measurements = []
@@ -235,9 +241,9 @@ def main():
 
     fig3 = plt.figure()
 
-    plt.semilogy(t/T, 3600*(180/pi)*pointing_error, '.')
+    plt.semilogy(t/T, (180/pi)*pointing_error, '.')
     plt.grid()
-    plt.title('Pointing Knowledge Error [Arcseconds]')
+    plt.title('Pointing Knowledge Error [degrees]')
     plt.xlabel('Time [Number of Orbits]')
 
     fig4 = plt.figure()
@@ -267,11 +273,11 @@ def main():
     plt.legend(['1', '2', '3', '4'])
 
     fig6 = plt.figure()
-    plt.plot(t/T, angle_off_nadir*180/pi)
+    plt.semilogy(t/T, angle_off_nadir*180/pi)
     plt.grid()
     plt.title('Angle from Body +Z to Nadir')
     plt.xlabel('Time [Number of Orbits]')
-    plt.ylabel('Angle [rad]')
+    plt.ylabel('Angle [deg]')
 
     plt.show()
 #main
