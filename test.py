@@ -105,26 +105,6 @@ def main():
     power_command = zeros((num_pts,5))
     energy_consumed = zeros(num_pts)
 
-    # newstate.append(solver.y)
-    # t.append(solver.t)
-    # state_estimate.append(EKF.getState())
-    # q_true = Quaternion(array = solver.y[0:4])
-    # q_estimate = Quaternion(array = EKF.getState()[0:4])
-    # q_e = q_true.conjugate*q_estimate
-    # q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
-    
-
-    # # Pointing error calc:
-    # C_bI_estimate = QtoC(EKF.getState()[0:4])
-    # z_I_estimate = C_bI_estimate[2, :]
-    # C_bI_true = QtoC(solver.y[0:4])
-    # z_I_true = C_bI_true[2, :]
-    # pointing_error.append(angleBetween(z_I_true, z_I_estimate))
-    # 
-
-    # utcs.append(utc)
-    # angle_off_nadir.append(angleBetween)
-
     Tc = zeros(3)
     energy = 0
     percentage = 10
@@ -155,7 +135,10 @@ def main():
             wheel_accel = controller.command_wheel_acceleration(Tc)
             
             #calculate the maximum wheel acceleration given a max power output
-            max_wheel_accel = inv(WHEEL_INERTIAS)@maximum(array([MAX_WHEEL_POWER]*4 -  abs(WHEEL_INERTIAS@w_wheels)**47), zeros(4))/1000
+            maintainment_power = 4.51*abs(WHEEL_INERTIAS@w_wheels)**47
+            power_remaining = maximum(array([MAX_WHEEL_POWER]*4) - maintainment_power, zeros(4))
+            max_wheel_accel = inv(WHEEL_INERTIAS)@power_remaining/1000
+
             #saturate the command
             saturated_wheel_accel = clip(wheel_accel, -max_wheel_accel, max_wheel_accel)
 
