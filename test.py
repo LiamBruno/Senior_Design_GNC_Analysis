@@ -20,12 +20,15 @@ def main():
     V = array([0, sqrt(mu/norm(R)), 0])
     T = 2*pi*sqrt(norm(R)**3/mu)
 
-    C_PRINC_BODY = Cx(0)@Cy(0)@Cz(0)
+    # SC Properties:
+    I = diag(array([11238.19347708, 10175.29654, 2630.01998292])) # Inertia matrix in principal body frame [kg*m^2]
+    C_PRINC_BODY = array([[ 9.97131595e-01, -7.56395929e-02,  -2.68965872e-03],
+                          [-7.56820738e-02, -9.96853200e-01,  -2.35779719e-02],
+                          [-8.97766702e-04,  2.37138997e-02,  -9.99718383e-01]])
 
     utc = datetime(year = 2019, month = 5, day = 8)
 
-    # SC Properties:
-    I = diag(array([5000, 12000, 13000])) # Inertia matrix in principal body frame [kg*m^2]
+    
 
     # Wheel properties:
     m = 50 # [kg]
@@ -34,7 +37,7 @@ def main():
     Iw = (1/2)*m*r**2 # Inertia of wheels around spin axis [kg*m^2]
 
     dt = .25
-    tspan = int(T) # Total simulation time [sec]
+    tspan = int(2*T/5) # Total simulation time [sec]
 
     # Noise estimates (standard deviations) for EKF:
     PROCESS_NOISE = sqrt(1e-12)
@@ -59,7 +62,9 @@ def main():
     WHEEL_TILT = 50*(pi/180) # [rad]
     WHEEL_INERTIAS = diag([Iw]*4) # [kg*m^2]
     DAMPING_RATIO = .65
-    SETTLING_TIME =  5*60# [sec]
+    SETTLING_TIME =  2*60# [sec]
+    MAX_WHEEL_MOMENTUM = 200 #Nms
+    MAX_WHEEL_POWER = sqrt(MAX_WHEEL_MOMENTUM)*5
     s = sin(WHEEL_TILT)
     c = cos(WHEEL_TILT)
     AS = array([[s, 0, -s, 0],
@@ -87,42 +92,23 @@ def main():
     num_pts = int(tspan/dt)
     t = zeros(num_pts)
 
-    t = [] # [sec]
-    newstate = []
-    measurements = []
-    state_estimate = []
-    ang_vel_error = []
-    q_error = []
-    pointing_error = []
+    t = zeros(num_pts) # [sec]
+    newstate = zeros((num_pts, 17))
+    measurements = zeros((num_pts, 7))
+    state_estimate = zeros((num_pts, 7))
+    ang_vel_error = zeros((num_pts, 3))
+    q_error = zeros((num_pts, 4))
+    pointing_error = zeros(num_pts)
     utcs = []
-    angle_off_nadir = []
-
-    # newstate.append(solver.y)
-    # t.append(solver.t)
-    # state_estimate.append(EKF.getState())
-    # q_true = Quaternion(array = solver.y[0:4])
-    # q_estimate = Quaternion(array = EKF.getState()[0:4])
-    # q_e = q_true.conjugate*q_estimate
-    # q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
-    
-
-    # # Pointing error calc:
-    # C_bI_estimate = QtoC(EKF.getState()[0:4])
-    # z_I_estimate = C_bI_estimate[2, :]
-    # C_bI_true = QtoC(solver.y[0:4])
-    # z_I_true = C_bI_true[2, :]
-    # pointing_error.append(angleBetween(z_I_true, z_I_estimate))
-    # 
-
-    # utcs.append(utc)
-    # angle_off_nadir.append(angleBetween)
+    angle_off_nadir = zeros(num_pts)
+    gradient_torques = zeros((num_pts, 3))
+    power_command = zeros((num_pts,5))
+    energy_consumed = zeros(num_pts)
 
     Tc = zeros(3)
+    energy = 0
     percentage = 10
-    while solver.successful() and (solver.t < tspan):
-
-        #Record Time
-        utcs.append(utc)
+    for i in range(num_pts):
 
         # Simulate measurements:
         q_true = Quaternion(array = array([solver.y[3], solver.y[0], solver.y[1], solver.y[2]]))
@@ -133,27 +119,53 @@ def main():
 
         # Update the filter:
         measurement = hstack([q_measurement, w_measurement])
-        measurements.append(measurement)
+        
         estimate = EKF.update(measurement, dt, Tc)
-        ang_vel_error.append(norm(estimate[4:7]) - norm(solver.y[4:7]))
-        state_estimate.append(estimate)
+
+        eps = estimate[0:3]
+        eta = estimate[3]
+        w = estimate[4:7]
+        w_wheels = solver.y[7:11]
+        R = solver.y[11:14]
+        V = solver.y[14:]
+        
         if solver.t > 5*60:
-            eps = estimate[0:3]
-            eta = estimate[3]
-            w = estimate[4:7]
-            R = solver.y[11:14]
-            V = solver.y[14:]
+            
             Tc = controller.command_torque(eps, eta, w, R, V, utc)
-            wheel_accel = controller.command_wheel_torques(Tc)
-            solver.set_f_params(I, WHEEL_INERTIAS, AS, mu, Tc, wheel_accel)
+            wheel_accel = controller.command_wheel_acceleration(Tc)
+            
+            #calculate the maximum wheel acceleration given a max power output
+            maintainment_power = 4.51*abs(WHEEL_INERTIAS@w_wheels)**47
+            power_remaining = maximum(array([MAX_WHEEL_POWER]*4) - maintainment_power, zeros(4))
+            max_wheel_accel = inv(WHEEL_INERTIAS)@power_remaining/1000
+
+            #saturate the command
+            saturated_wheel_accel = clip(wheel_accel, -max_wheel_accel, max_wheel_accel)
+
+            #set the values
+            solver.set_f_params(I, WHEEL_INERTIAS, AS, mu, Tc, saturated_wheel_accel)
+
+            #equation from https://digitalcommons.usu.edu/cgi/viewcontent.cgi?article=1080&context=smallsat
+            power = 1000*abs(WHEEL_INERTIAS@saturated_wheel_accel) + 4.51*abs(WHEEL_INERTIAS@w_wheels)**.47
+            energy += sum(power)*dt
+
+            #Note to future selves:
+            #The reason the power plots show wheels exceeding the max power is because the wheels gain energy from the body rotating around them
+            #This if this means that the power required to maintain the wheel speed is higher than what is possible, the saturated_wheel_accel
+            #will be zero, but the power consumption will be above max because in reality the wheels would experience drag on the motor because we
+            #cand maintain their speed. They dont experience drag so it bamboozles the math and keeps its speed. Poop.
+        else:
+            power = zeros(4)
         #if
+
+        
 
         # Pointing error calc:
         C_princ_inertial_estimate = QtoC(estimate[0:4])
         z_I_estimate = C_princ_inertial_estimate[2, :]
         C_princ_inertial_true = QtoC(solver.y[0:4])
         z_I_true = C_princ_inertial_true[2, :]
-        pointing_error.append(angleBetween(z_I_true, z_I_estimate))
+        
 
         #Angle from Nadir Calc
         z_body = array([0,0,1])
@@ -161,22 +173,39 @@ def main():
         z_inertial = C_princ_inertial_true.T@z_princ
         nadir = -solver.y[11:14]/norm(solver.y[11:14])
         nadir_angle = angleBetween(z_inertial, nadir)
-        angle_off_nadir.append(nadir_angle)
+
+        #gravity gradient torque
+        Rprinc = C_princ_inertial_true @ R
+        Tgg = (3*mu/norm(R)**5)*(crux(Rprinc) @ (I @ Rprinc))
+        
 
 
         # Kalman Quaternion error calc:
         q_estimate = Quaternion(array = array([estimate[3], estimate[0], estimate[1], estimate[2]]))
         q_e = q_true.conjugate*q_estimate
-        q_error.append(array([q_e[1], q_e[2], q_e[3], q_e[0]]))
+        
         
 
         # Integrate:
         solver.integrate(solver.t + dt)
-        t.append(solver.t)
-        newstate.append(solver.y)
+        
 
         #increment time
         utc += timedelta(seconds = dt)
+
+        #save data
+        t[i] = solver.t
+        newstate[i] = solver.y
+        q_error[i] = array([q_e[1], q_e[2], q_e[3], q_e[0]])
+        angle_off_nadir[i] = nadir_angle
+        pointing_error[i] = angleBetween(z_I_true, z_I_estimate)
+        ang_vel_error[i] = norm(estimate[4:7]) - norm(solver.y[4:7])
+        state_estimate[i] = estimate
+        measurements[i] = measurement
+        utcs.append(utc)
+        gradient_torques[i] = Tgg
+        power_command[i] = hstack([sum(power), power])
+        energy_consumed[i] = energy
         
 
 
@@ -188,12 +217,12 @@ def main():
         #if
     #while
 
-    t = hstack(t)
-    newstate = vstack(newstate)
-    state_estimate = vstack(state_estimate)
-    q_error = vstack(q_error)
-    pointing_error = hstack(pointing_error)
-    angle_off_nadir = hstack(angle_off_nadir)
+    # t = hstack(t)
+    # newstate = vstack(newstate)
+    # state_estimate = vstack(state_estimate)
+    # q_error = vstack(q_error)
+    # pointing_error = hstack(pointing_error)
+    # angle_off_nadir = hstack(angle_off_nadir)
 
     fig, axes1 = plt.subplots(4, 1, squeeze = False)
 
@@ -279,6 +308,27 @@ def main():
     plt.xlabel('Time [Number of Orbits]')
     plt.ylabel('Angle [deg]')
 
+    fig7 = plt.figure()
+    plt.plot(t/T, gradient_torques)
+    plt.grid()
+    plt.title('Gravity Gradient Torques')
+    plt.xlabel('Time [Number of Orbits]')
+    plt.ylabel('Torque [Nm]')
+
+    fig8 = plt.figure()
+    plt.plot(t/T, power_command)
+    plt.grid()
+    plt.title('Power Consumption')
+    plt.xlabel('Time [Number of Orbits]')
+    plt.ylabel('Power [W]')
+
+    fig9 = plt.figure()
+    plt.plot(t/T, energy_consumed)
+    plt.grid()
+    plt.title('Energy Consumed by Wheels')
+    plt.xlabel('Time [Number of Orbits]')
+    plt.ylabel('Energy [J]')
+
     plt.show()
 #main
     
@@ -300,7 +350,7 @@ def propagateTruth(t, state, I, Ics, As, mu, Tc, wheel_accel):
     Rprinc = C_princ_inertial @ R
     Tgg = (3*mu/norm(R)**5)*(crux(Rprinc) @ (I @ Rprinc))
     h_w = As @ (Ics @ w_wheels)
-    dw = inv(I) @ (Tc - crux(w) @ (I@w + h_w))
+    dw = inv(I) @ (Tc + Tgg - crux(w) @ (I@w + h_w))
 
     wwdot = wheel_accel
     
