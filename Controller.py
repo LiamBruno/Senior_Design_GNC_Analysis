@@ -2,6 +2,7 @@ from numpy import *
 from numpy.linalg import inv
 from AERO_TOOLKIT_NEW import *
 import pyquaternion
+from jplephem.spk import SPK
 
 class Controller:
 
@@ -15,6 +16,15 @@ class Controller:
 		self.wheel_rates = wheel_rates
 		self.mode = mode
 		self.C_princ_body = C_principal_body
+
+		# Load .bsp containing JPL ephemerides:
+		kernel = SPK.open('de430.bsp') # Load .bsp file containing ephemerides
+
+		# Constants for each relevant celestial body:
+		EARTH = 3
+		MOON = 399
+		SUN = 10
+		CENTER = 0
 	#constructor
 
 	def calc_gains(self, damping_ratio, settling_time):
@@ -33,7 +43,7 @@ class Controller:
 		self.kd = kd
 	#set_gains
 
-	def getError(self, eps, eta, w, R = None, V = None, UTC = None):
+	def getError(self, eps, eta, w, R_sc_moon = None, V_sc_moon = None, UTC = None, a = None):
 		if self.mode == "Nadir":
 			C_princ_inertial = QtoC(hstack([eps, eta]))
 			h = cross(R, V)
@@ -54,9 +64,26 @@ class Controller:
 			w_e = w - w_c
 			return eps_e, w_e
 
-		if self.mode == "Tumble":
-			return zeros((3,)), zeros((3,))
-		#if
+		elif self.mode == "Sun_Point":
+			C_princ_inertial = QtoC(hstack([eps, eta]))
+
+			# Ephemerides:
+			R_sun, V_sun = kernel[0, SUN].compute_and_differentiate(ut_to_jd(UTC))
+			V_sun /= 86400 # [km/s]
+			R_moon, V_moon = kernal[0, MOON].compute_and_differentiate(ut_to_jd(UTC))
+			V_moon /= 86400 # [km/s]
+			R_sc = R_moon + R_sc_moon # Inertial position of S/C relative to solar system barycetner [km]
+			V_sc = V_moon + V_sc_moon # Inertial velocity of S/C relative to solar system barycetner [km/s]
+
+
+			# Calculate quaternion error:
+			theta = angleBetween(a, -R_sc)
+			eps_e = cross(a, R_sc)/norm(cross(a, R_sc))*sin(theta/2)
+
+			# Calculate angular velocity error:
+			w_e = w - C_prin_inertial @ (cross(-R_sc, V_sc)/norm(R_sc)**2)
+			return eps_e, w_e
+		#elif
 	#getError
 
 	def command_torque(self, eps, eta, w, R = None, V = None, UTC = None):
