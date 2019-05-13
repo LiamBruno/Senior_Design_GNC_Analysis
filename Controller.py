@@ -18,13 +18,13 @@ class Controller:
 		self.C_princ_body = C_principal_body
 
 		# Load .bsp containing JPL ephemerides:
-		kernel = SPK.open('de430.bsp') # Load .bsp file containing ephemerides
+		self.kernel = SPK.open('de430.bsp') # Load .bsp file containing ephemerides
 
 		# Constants for each relevant celestial body:
-		EARTH = 3
-		MOON = 399
-		SUN = 10
-		CENTER = 0
+		self.EARTH = 3
+		self.MOON = 399
+		self.SUN = 10
+		self.CENTER = 0
 	#constructor
 
 	def calc_gains(self, damping_ratio, settling_time):
@@ -43,7 +43,7 @@ class Controller:
 		self.kd = kd
 	#set_gains
 
-	def getError(self, eps, eta, w, R_sc_moon = None, V_sc_moon = None, UTC = None, a = None):
+	def getError(self, eps, eta, w, R = None, V = None, UTC = None, a = None):
 		if self.mode == "Nadir":
 			C_princ_inertial = QtoC(hstack([eps, eta]))
 			h = cross(R, V)
@@ -62,34 +62,41 @@ class Controller:
 
 			w_c = C_princ_inertial @ (h / (norm(R) ** 2))
 			w_e = w - w_c
-			return eps_e, w_e
+
+			theta = arccos(eta_e)*2
+
+			return eps_e, w_e, theta
 
 		elif self.mode == "Sun_Point":
 			C_princ_inertial = QtoC(hstack([eps, eta]))
 
 			# Ephemerides:
-			R_sun, V_sun = kernel[0, SUN].compute_and_differentiate(ut_to_jd(UTC))
+			R_sun, V_sun = self.kernel[0, self.SUN].compute_and_differentiate(ut_to_jd(UTC))
 			V_sun /= 86400 # [km/s]
-			R_moon, V_moon = kernal[0, MOON].compute_and_differentiate(ut_to_jd(UTC))
+			R_earth, V_earth = self.kernel[0, self.EARTH].compute_and_differentiate(ut_to_jd(UTC))
+			R_earth_moon, V_earth_moon = self.kernel[3, self.MOON].compute_and_differentiate(ut_to_jd(UTC))
+			R_moon = R_earth + R_earth_moon
+			V_moon = V_earth + V_earth_moon
 			V_moon /= 86400 # [km/s]
-			R_sc = R_moon + R_sc_moon # Inertial position of S/C relative to solar system barycetner [km]
-			V_sc = V_moon + V_sc_moon # Inertial velocity of S/C relative to solar system barycetner [km/s]
+			R_sc = R_moon + R # Inertial position of S/C relative to solar system barycetner [km]
+			V_sc = V_moon + V # Inertial velocity of S/C relative to solar system barycetner [km/s]
 
 
 			# Calculate quaternion error:
-			theta = angleBetween(a, -R_sc)
-			eps_e = cross(a, R_sc)/norm(cross(a, R_sc))*sin(theta/2)
+			a_inertial = C_princ_inertial.T@self.C_princ_body@a
+			theta = angleBetween(a_inertial, -R_sc)
+			eps_e = cross(a_inertial, -R_sc)/norm(cross(a_inertial, R_sc))*sin(theta/2)
 
 			# Calculate angular velocity error:
-			w_e = w - C_prin_inertial @ (cross(-R_sc, V_sc)/norm(R_sc)**2)
-			return eps_e, w_e
+			w_e = w - C_princ_inertial @ (cross(R_sc, V_sc)/norm(R_sc)**2)
+			return eps_e, w_e, theta
 		#elif
 	#getError
 
-	def command_torque(self, eps, eta, w, R = None, V = None, UTC = None):
-		E_err, w_err = self.getError(eps, eta, w, R, V, UTC)
+	def command_torque(self, eps, eta, w, R = None, V = None, UTC = None, a = None):
+		E_err, w_err, theta_err = self.getError(eps, eta, w, R, V, UTC, a)
 		Tc = -self.kp@E_err -self.kd@w_err
-		return Tc
+		return Tc, theta_err
 	#command_torque
 
 	def command_wheel_acceleration(self, Tc):
