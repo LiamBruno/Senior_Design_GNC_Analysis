@@ -38,15 +38,18 @@ def main():
     Iw = (1/2)*m*r**2 # Inertia of wheels around spin axis [kg*m^2]
 
     dt = .5
-    tspan = T/2
+    tspan = T/5
     tspan = int(tspan) # Total simulation time [sec]
 
+
+
     # Noise estimates (standard deviations) for EKF:
-    PROCESS_NOISE = sqrt(1e-13)
-    MEASUREMENT_NOISE = sqrt(1e-8)
-    COVARIANCE_GUESS = sqrt(1e-7)
-    STAR_TRACKER_NOISE = sqrt(2.5e-9)
+    STAR_TRACKER_NOISE = 5e-5
     GYRO_NOISE = sqrt(1e-7)
+    MEASUREMENT_NOISE = diag(hstack([[STAR_TRACKER_NOISE/2]*4, [GYRO_NOISE]*3]))
+    PROCESS_NOISE = (sqrt(1e-6)**2)*identity(7)
+    COVARIANCE_GUESS = (sqrt(1e-7)**2)*identity(7)
+    
     POS_NOISE = sqrt(1e-2) # [km^1/2]
     VEL_NOISE = sqrt(1e-2) # [(km/s)^1/2]
 
@@ -125,14 +128,19 @@ def main():
         # Update the filter:
         measurement = hstack([q_measurement, w_measurement])
 
-        estimate = EKF.update(measurement, dt, Tc)
+        
+
+        
+        w_wheels = solver.y[7:11]
+        R = solver.y[11:14] + random.normal(0, POS_NOISE, (3,))
+        V = solver.y[14:] + random.normal(0, VEL_NOISE, (3,))
+
+        C_princ_inertial_true = QtoC(solver.y[0:4])
+        estimate = EKF.update(measurement, dt, C_PRINC_BODY@C_princ_inertial_true@R,Tc)
 
         eps = estimate[0:3]
         eta = estimate[3]
         w = estimate[4:7]
-        w_wheels = solver.y[7:11]
-        R = solver.y[11:14] + random.normal(0, POS_NOISE, (3,))
-        V = solver.y[14:] + random.normal(0, VEL_NOISE, (3,))
 
         if solver.t > 2*60:
             Tc = controller.command_torque(eps, eta, w, R, V, utc, a = a)
@@ -143,7 +151,6 @@ def main():
         # Pointing error calc:
         C_princ_inertial_estimate = QtoC(estimate[0:4])
         y_I_estimate = C_princ_inertial_estimate[1, :]
-        C_princ_inertial_true = QtoC(solver.y[0:4])
         y_I_true = C_princ_inertial_true[1, :]
 
         #gravity gradient torque
@@ -277,7 +284,7 @@ def main():
     plt.legend(['1', '2', '3', '4'])
 
     fig6 = plt.figure()
-    plt.plot(t/T, angle_off_target*180/pi)
+    plt.semilogy(t/T, angle_off_target*180/pi)
     plt.grid()
     plt.title('Angle from Body +Z to Target')
     plt.xlabel('Time [Number of Orbits]')
@@ -301,6 +308,48 @@ def main():
     plt.xlabel('Time [Number of Orbits]')
     plt.ylabel('Angular Velocity [RPM]')
     plt.legend(['1', '2', '3', '4'])
+
+    fig9, axes9 = plt.subplots(4, 2, squeeze = False)
+
+    axes9[0][0].plot(t/T, measurements[:,0] - newstate[:,0], '.')
+    axes9[0][0].plot(t/T, state_estimate[:,0] - newstate[:,0])
+    axes9[0][0].set_title('eps1')
+    axes9[0][0].legend(['Truth', 'Estimate'])
+    axes9[0][0].set_ylim(-.0001,.0001)
+
+    axes9[1][0].plot(t/T, measurements[:,1] - newstate[:,1], '.')
+    axes9[1][0].plot(t/T, state_estimate[:,1] - newstate[:,1])
+    axes9[1][0].set_title('eps2')
+    axes9[1][0].set_ylim(-.0001,.0001)
+
+    axes9[2][0].plot(t/T, measurements[:,2] - newstate[:,2], '.')
+    axes9[2][0].plot(t/T, state_estimate[:,2] - newstate[:,2])
+    axes9[2][0].set_title('eps3')
+    axes9[2][0].set_ylim(-.0001,.0001)
+
+    axes9[3][0].plot(t/T, measurements[:,3] - newstate[:,3], '.')
+    axes9[3][0].plot(t/T, state_estimate[:,3] - newstate[:,3])
+    axes9[3][0].set_title('eta')
+    axes9[3][0].set_ylim(-.0001,.0001)
+
+    axes9[0][1].plot(t/T, measurements[:,4] - newstate[:,4], '.')
+    axes9[0][1].plot(t/T, state_estimate[:,4] - newstate[:,4])
+    axes9[0][1].set_title('w1')
+    axes9[0][1].legend(['Truth', 'Estimate'])
+    axes9[0][1].set_ylim(-.002, .002)
+
+    axes9[1][1].plot(t/T, measurements[:,5] - newstate[:,5], '.')
+    axes9[1][1].plot(t/T, state_estimate[:,5] - newstate[:,5])
+    axes9[1][1].set_title('w2')
+    axes9[1][1].set_ylim(-.002, .002)
+
+
+    axes9[2][1].plot(t/T, measurements[:,6] - newstate[:,6], '.')
+    axes9[2][1].plot(t/T, state_estimate[:,6] - newstate[:,6])
+    axes9[2][1].set_title('w3')
+    axes9[2][1].set_ylim(-.002, .002)
+
+    fig9.suptitle('Measurement vs EKF Error wrt Truth')
 
     plt.show()
 #main
