@@ -29,29 +29,28 @@ def main():
                           [-7.56820738e-02, -9.96853200e-01,  -2.35779719e-02],
                           [-8.97766702e-04,  2.37138997e-02,  -9.99718383e-01]])
 
-    utc = datetime(year = 2019, month = 5, day = 8)
+    utc = datetime(year = 2024, month = 5, day = 17)
 
     # Wheel properties:
     m = 25 # [kg]
-    r = .15 # [m]
+    r = .2 # [m]
     h = .1 # [m]
     Iw = (1/2)*m*r**2 # Inertia of wheels around spin axis [kg*m^2]
 
     dt = .5
-    tspan = T/5
+    tspan = T
     tspan = int(tspan) # Total simulation time [sec]
 
 
-
     # Noise estimates (standard deviations) for EKF:
-    STAR_TRACKER_NOISE = 5e-5
-    GYRO_NOISE = sqrt(1e-7)
+    STAR_TRACKER_NOISE = 4.363e-5 # [rad]
+    GYRO_NOISE = 5e-3 # [rad/s]
     MEASUREMENT_NOISE = diag(hstack([[STAR_TRACKER_NOISE/2]*4, [GYRO_NOISE]*3]))
     PROCESS_NOISE = (sqrt(1e-6)**2)*identity(7)
     COVARIANCE_GUESS = (sqrt(1e-7)**2)*identity(7)
     
-    POS_NOISE = sqrt(1e-2) # [km^1/2]
-    VEL_NOISE = sqrt(1e-2) # [(km/s)^1/2]
+    POS_NOISE = sqrt(1e-3) # [km^1/2]
+    VEL_NOISE = sqrt(1e-3) # [(km/s)^1/2]
 
     # Initial EKF estimate:
     aguess = array([2, 4, 3])/norm(array([2, 4, 3]))
@@ -66,8 +65,8 @@ def main():
     # Actuator Properties and Configuration:
     WHEEL_TILT = 57.73*(pi/180) # [rad]
     WHEEL_INERTIAS = diag([Iw]*4) # [kg*m^2]
-    DAMPING_RATIO = .6
-    SETTLING_TIME =  2*60# [sec]
+    DAMPING_RATIO = .65
+    SETTLING_TIME =  5*60# [sec]
     s = sin(WHEEL_TILT)
     c = cos(WHEEL_TILT)
     AS = array([[s, 0, -s, 0],
@@ -127,9 +126,6 @@ def main():
 
         # Update the filter:
         measurement = hstack([q_measurement, w_measurement])
-
-        
-
         
         w_wheels = solver.y[7:11]
         R = solver.y[11:14] + random.normal(0, POS_NOISE, (3,))
@@ -180,7 +176,16 @@ def main():
         R_sun_sc = R_sun - R_sc 
         R_earth_sc = R_earth - R_sc
 
-        target = R_earth_sc/norm(R_earth_sc)
+        if (solver.t < tspan/4):
+            target = R_earth_sc
+        elif (solver.t >= tspan/4) and (solver.t < tspan/2):
+            controller.set_mode("Nadir")
+            target = -R
+        elif (solver.t >= tspan/2):
+            controller.set_mode("Sun_Point")
+            target = R_sun_sc
+        #elif
+        
         # target = R_sun_sc/norm(R_sun_sc)
 
         #save data:
@@ -194,6 +199,9 @@ def main():
         utcs.append(utc)
         gradient_torques[i] = Tgg
         angle_off_target[i] = angleBetween(C_PRINC_BODY @ a, C_princ_inertial_true @ target)
+
+
+            #elif
 
         # Progress:
         completion = solver.t/tspan*100
@@ -224,6 +232,7 @@ def main():
     axes1[3][0].plot(t/T, state_estimate[:,3], '.')
     axes1[3][0].plot(t/T, newstate[:,3])
     axes1[3][0].set_title('eta')
+    plt.savefig('Quaternion Estimate vs Truth.png', bbox_inches = 'tight', dpi = 1000)
 
     fig1 = plt.figure()
 
@@ -235,6 +244,7 @@ def main():
     plt.title('Kalman Filter Quaternion Estimate Error')
     plt.xlabel('Time [Number of Orbits]')
     plt.legend(['q_i', 'q_j', 'q_k', 'q_r'])
+    plt.savefig('Kalman Filter Quaternion Estimate Error.png', bbox_inches = 'tight', dpi = 1000)
 
     fig2 = plt.figure()
 
@@ -249,6 +259,7 @@ def main():
     plt.title('Kalman Angular Velocity Error [deg/s]')
     plt.xlabel('Time [Number of Orbits]')
     plt.legend(['Body X', 'Body Y', 'Body Z'])
+    plt.savefig('Kalman Angular Velocity Error.png', bbox_inches = 'tight', dpi = 1000)
 
     fig3 = plt.figure()
 
@@ -256,6 +267,7 @@ def main():
     plt.grid()
     plt.title('Kalman Pointing Knowledge Error [degrees]')
     plt.xlabel('Time [Number of Orbits]')
+    plt.savefig('Kalman Pointing Knowledge Error.png', bbox_inches = 'tight', dpi = 1000)
 
     fig4 = plt.figure()
 
@@ -270,6 +282,7 @@ def main():
     plt.title('Body Rates [deg/s]')
     plt.xlabel('Time [Number of Orbits]')
     plt.legend(['Body X', 'Body Y', 'Body Z'])
+    plt.savefig('Body Rates.png', bbox_inches = 'tight', dpi = 1000)
 
     fig5 = plt.figure()
 
@@ -282,13 +295,16 @@ def main():
     plt.xlabel('Time [Number of Orbits]')
     plt.ylabel('Angular Momentum [Nms]')
     plt.legend(['1', '2', '3', '4'])
+    plt.savefig('Wheel Momentum Storage.png', bbox_inches = 'tight', dpi = 1000)
 
     fig6 = plt.figure()
     plt.semilogy(t/T, angle_off_target*180/pi)
+    plt.semilogy([t[0]/T, tspan/T/4, tspan/T/4, tspan/T/2, tspan/T/2, t[-1]/T], [.05, .05, .15, .15, .5, .5],'r')
     plt.grid()
-    plt.title('Angle from Body +Z to Target')
+    plt.title('Angle from Target')
     plt.xlabel('Time [Number of Orbits]')
     plt.ylabel('Angle [deg]')
+    plt.savefig('Angle from Target.png', bbox_inches = 'tight', dpi = 1000)
 
     fig7 = plt.figure()
     plt.plot(t/T, gradient_torques)
@@ -296,6 +312,7 @@ def main():
     plt.title('Gravity Gradient Torques')
     plt.xlabel('Time [Number of Orbits]')
     plt.ylabel('Torque [Nm]')
+    plt.savefig('Gravity Gradient Torques.png', bbox_inches = 'tight', dpi = 1000)
 
     fig8 = plt.figure()
 
@@ -308,13 +325,13 @@ def main():
     plt.xlabel('Time [Number of Orbits]')
     plt.ylabel('Angular Velocity [RPM]')
     plt.legend(['1', '2', '3', '4'])
+    plt.savefig('Wheel Angular Velocity.png', bbox_inches = 'tight', dpi = 1000)
 
     fig9, axes9 = plt.subplots(4, 2, squeeze = False)
 
     axes9[0][0].plot(t/T, measurements[:,0] - newstate[:,0], '.')
     axes9[0][0].plot(t/T, state_estimate[:,0] - newstate[:,0])
     axes9[0][0].set_title('eps1')
-    axes9[0][0].legend(['Truth', 'Estimate'])
     axes9[0][0].set_ylim(-.0001,.0001)
 
     axes9[1][0].plot(t/T, measurements[:,1] - newstate[:,1], '.')
@@ -335,7 +352,6 @@ def main():
     axes9[0][1].plot(t/T, measurements[:,4] - newstate[:,4], '.')
     axes9[0][1].plot(t/T, state_estimate[:,4] - newstate[:,4])
     axes9[0][1].set_title('w1')
-    axes9[0][1].legend(['Truth', 'Estimate'])
     axes9[0][1].set_ylim(-.002, .002)
 
     axes9[1][1].plot(t/T, measurements[:,5] - newstate[:,5], '.')
@@ -349,7 +365,10 @@ def main():
     axes9[2][1].set_title('w3')
     axes9[2][1].set_ylim(-.002, .002)
 
+    axes9[3][0]legend(['Measurement', 'Filter'])
+
     fig9.suptitle('Measurement vs EKF Error wrt Truth')
+    plt.savefig('Measurement vs EKF Error ert Truth.png', bbox_inches = 'tight', dpi = 1000)
 
     plt.show()
 #main
