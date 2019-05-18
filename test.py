@@ -66,7 +66,7 @@ def main():
     WHEEL_TILT = 57.73*(pi/180) # [rad]
     WHEEL_INERTIAS = diag([Iw]*4) # [kg*m^2]
     DAMPING_RATIO = .65
-    SETTLING_TIME =  5*60# [sec]
+    SETTLING_TIME =  2*60# [sec]
     s = sin(WHEEL_TILT)
     c = cos(WHEEL_TILT)
     AS = array([[s, 0, -s, 0],
@@ -297,14 +297,21 @@ def main():
     plt.legend(['1', '2', '3', '4'])
     plt.savefig('Wheel Momentum Storage.png', bbox_inches = 'tight', dpi = 1000)
 
-    fig6 = plt.figure()
-    plt.semilogy(t/T, angle_off_target*180/pi)
-    plt.semilogy([t[0]/T, tspan/T/4, tspan/T/4, tspan/T/2, tspan/T/2, t[-1]/T], [.05, .05, .15, .15, .5, .5],'r')
-    plt.grid()
-    plt.title('Angle from Target')
-    plt.xlabel('Time [Number of Orbits]')
-    plt.ylabel('Angle [deg]')
+    fig6, axes6 = plt.subplots(2, 1, squeeze = False)
+    axes6[1][0].semilogy(t/T, angle_off_target*180/pi)
+    axes6[1][0].semilogy([t[0]/T, tspan/T/4, tspan/T/4, tspan/T/2, tspan/T/2, t[-1]/T], [.05, .05, .15, .15, .5, .5],'r')
+    axes6[1][0].grid()
+    axes6[1][0].set_xlabel('Time [Number of Orbits]')
+    axes6[1][0].set_ylabel('Angle [deg]')
+
+    axes6[0][0].plot([0, 2*60/T, 2*60/T, tspan/T/4, tspan/T/4, tspan/T/2, tspan/T/2, tspan/T], [0 ,0 ,1 ,1 ,2 ,2 ,3 , 3])
+    axes6[0][0].set_yticks([0,1,2,3])
+    axes6[0][0].set_yticklabels(['Tumble', 'Earth Point', 'Nadir Point', 'Sun Point'])
+    axes6[0][0].set_title('Mode')
+    fig6.suptitle('Angle from Target')
+
     plt.savefig('Angle from Target.png', bbox_inches = 'tight', dpi = 1000)
+
 
     fig7 = plt.figure()
     plt.plot(t/T, gradient_torques)
@@ -352,20 +359,26 @@ def main():
     axes9[0][1].plot(t/T, measurements[:,4] - newstate[:,4], '.')
     axes9[0][1].plot(t/T, state_estimate[:,4] - newstate[:,4])
     axes9[0][1].set_title('w1')
-    axes9[0][1].set_ylim(-.002, .002)
+    axes9[0][1].set_ylim(-.02, .02)
 
     axes9[1][1].plot(t/T, measurements[:,5] - newstate[:,5], '.')
     axes9[1][1].plot(t/T, state_estimate[:,5] - newstate[:,5])
     axes9[1][1].set_title('w2')
-    axes9[1][1].set_ylim(-.002, .002)
+    axes9[1][1].set_ylim(-.02, .02)
 
 
     axes9[2][1].plot(t/T, measurements[:,6] - newstate[:,6], '.')
     axes9[2][1].plot(t/T, state_estimate[:,6] - newstate[:,6])
     axes9[2][1].set_title('w3')
-    axes9[2][1].set_ylim(-.002, .002)
+    axes9[2][1].set_ylim(-.02, .02)
 
-    axes9[3][0]legend(['Measurement', 'Filter'])
+    axes9[3][1].legend(['Measurement', 'Filter'])
+    fig9.subplots_adjust(top=0.886,
+                        bottom=0.081,
+                        left=0.132,
+                        right=0.959,
+                        hspace=0.8,
+                        wspace=0.361)
 
     fig9.suptitle('Measurement vs EKF Error wrt Truth')
     plt.savefig('Measurement vs EKF Error ert Truth.png', bbox_inches = 'tight', dpi = 1000)
