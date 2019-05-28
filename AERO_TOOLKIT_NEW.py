@@ -25,8 +25,7 @@ def coes_to_RV(a, e, i, RAAN, omega, theta):
     return R, V
 # coes_to_RV
 
-def RV_to_coes(R, V):
-    mu = 398600
+def RV_to_coes(R, V, mu):
     h = cross(R, V)
     r = norm(R)
     v = norm(V)
@@ -134,8 +133,9 @@ def vec_cross(v):
 # vec_cross
 
 def angleBetween(a, b):
-    # returns the angle between vectors a and b [rad]
-    return arccos(dot(a, b)/(norm(a)*norm(b)))
+    a = a/norm(a)
+    b = b/norm(b)
+    return arccos(clip(dot(a, b), -1.0, 1.0))
 # angleBetween
 
 def UT2LST(utc, lon):
@@ -658,3 +658,20 @@ def quat_mult(E1, n1, E2, n2):
 
     return E3, n3
 #quat_mult
+
+def makeAttitudeFile(time, quats, filename):
+    file = open(filename, 'w')
+    file.write('stk.v.11.0\n'
+                'BEGIN Attitude\n'
+                'NumberOfAttitudePoints  '+str(len(time))+'\n'
+                'ScenarioEpoch           22 May 2019 19:00:00.000000000\n'
+                'BlockingFactor          20\n'
+                'InterpolationOrder      1\n'
+                'CentralBody             Moon\n'
+                'CoordinateAxes          J2000\n'
+                'AttitudeTimeQuaternions\n')
+    for t, quat in zip(time, quats):
+        file.write('{:.12E} {:.12E} {:.12E} {:.12E} {:.12E}\n'.format(t, quat[0], quat[1], quat[2], quat[3]))
+    #for
+    file.write('END Attitude')
+#makeAttitudeFile
