@@ -35,7 +35,7 @@ def main():
     Iw = (1/2)*m*r**2 # Inertia of wheels around spin axis [kg*m^2]
 
     dt = .5
-    tspan = 15*60
+    tspan = 15*60 + 60*60
     tspan = int(tspan) # Total simulation time [sec]
 
     # Noise estimates (standard deviations) for EKF:
@@ -110,6 +110,8 @@ def main():
 
     percentage = 10
 
+    tumble_time = 2*60
+
     # Solve:
     for i in range(num_pts):
 
@@ -134,7 +136,7 @@ def main():
         eta = estimate[3]
         w = estimate[4:7]
 
-        if solver.t > tspan/10:
+        if solver.t > tumble_time:
             Tc = controller.command_torque(eps, eta, w, R, V, utc, a)
             wheel_accel = controller.command_wheel_acceleration(Tc)
             solver.set_f_params(I, WHEEL_INERTIAS, AS, mu, Tc, wheel_accel) 
@@ -170,17 +172,18 @@ def main():
         # Sun calcs:
         R_sc_sun = R_sun - R_earth - R_earth_moon - R
 
-        # if (solver.t < tspan/4):
-        #     target =-R
-        # elif (solver.t >= tspan/4) and (solver.t < tspan/2):
-        #     controller.set_mode("Nadir")
-        #     target = -R
-        # elif (solver.t >= tspan/2):
-        #     controller.set_mode("Nadir")
-        #     target = -R
+        if (solver.t < tspan/3):
+            controller.set_mode("Nadir")
+            target =-R
+        elif (solver.t >= tspan/3) and (solver.t < tspan*2/3):
+            controller.set_mode("Earth_Point")
+            target = -R_sc_earth
+        elif (solver.t >= tspan*2/3):
+            controller.set_mode("Sun_Point")
+            target = -R_sc_sun
         # #elif
 
-        target = -solver.y[11:14]
+        #target = -solver.y[11:14]
 
         #save data:
         t[i] = solver.t
@@ -306,13 +309,13 @@ def main():
     print("6/8")
 
     fig6, axes6 = plt.subplots(2, 1, squeeze = False)
-    axes6[1][0].plot(t/T, angle_off_target*180/pi)
-    axes6[1][0].plot([t[0]/T, tspan/T/4, tspan/T/4, tspan/T/2, tspan/T/2, t[-1]/T], [1, 1 ,1, 1, 1, 1],'r')
+    axes6[1][0].semilogy(t/T, angle_off_target*180/pi)
+    axes6[1][0].semilogy([t[0]/T, tspan/T/4, tspan/T/4, tspan/T/2, tspan/T/2, t[-1]/T], [1, 1 ,1, 1, 1, 1],'r')
     axes6[1][0].grid()
     axes6[1][0].set_xlabel('Time [Number of Orbits]')
-    axes6[1][0].set_ylabel('Angle [deg]')
+    axes6[1][0].set_ylabel('Angle Error [deg]')
 
-    axes6[0][0].plot([0, 2*60/T, 2*60/T, tspan/T/4, tspan/T/4, tspan/T/2, tspan/T/2, tspan/T], [0 ,0 ,1 ,1 ,2 ,2 ,3 , 3])
+    axes6[0][0].plot([0, tumble_time/T, tumble_time/T, tspan/T/3, tspan/T/3, tspan/T*2/3, tspan/T*2/3, tspan/T], [0 ,0 ,1 ,1 ,2 ,2 ,3 , 3])
     axes6[0][0].set_yticks([0,1,2,3])
     axes6[0][0].set_yticklabels(['Tumble', 'Earth Point', 'Nadir Point', 'Sun Point'])
     axes6[0][0].set_title('Mode')
